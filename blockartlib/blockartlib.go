@@ -8,7 +8,9 @@ library (blockartlib) to be used in project 1 of UBC CS 416 2017W2.
 package blockartlib
 
 import "crypto/ecdsa"
-import "fmt"
+import (
+	"fmt"
+)
 
 // Represents a type of shape in the BlockArt system.
 type ShapeType int
@@ -52,6 +54,18 @@ type MinerNetSettings struct {
 
 	// Canvas settings
 	canvasSettings CanvasSettings
+}
+
+type Point struct {
+	x, y int
+}
+
+type Shape struct {
+	hash     string
+	svg      string
+	point    []Point
+	filledIn bool
+	ink      int
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -196,4 +210,11 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	// TODO
 	// For now return DisconnectedError
 	return nil, CanvasSettings{}, DisconnectedError("")
+}
+
+func InkUsed(shape *Shape) (ink int, err error) {
+	ink = 0
+	// get border length of shape
+
+	return ink, nil
 }
