@@ -8,8 +8,12 @@ library (blockartlib) to be used in project 1 of UBC CS 416 2017W2.
 package blockartlib
 
 import "crypto/ecdsa"
-import "fmt"
-import "./ink-miner.go"
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"unicode"
+)
 
 // Represents a type of shape in the BlockArt system.
 type ShapeType int
@@ -53,6 +57,18 @@ type MinerNetSettings struct {
 
 	// Canvas settings
 	canvasSettings CanvasSettings
+}
+type Point struct {
+	x, y int
+}
+
+type Shape struct {
+	hash string
+	svg string
+	point []Point
+	filledIn bool
+	ink int
+	closedWithZ bool
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -199,8 +215,185 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	return nil, CanvasSettings{}, DisconnectedError("")
 }
 
+func checkErr(err error){
+	if err != nil {
+		panic(err)
+	}
+}
+
+func checkSvgStringlen(svgString string) bool{
+	return len(svgString) > 128
+}
 
 
-func svgToShape(svgString string) {
+/* TODO: a lot of edge cases here for the svg
+	- lifting up the pen nultiple "m"
+	- different key words , filter out id="" or something with two d's
+*/
 
+func SvgToShape(svgString string) (Shape, error) {
+	if checkSvgStringlen(svgString){
+		return Shape{}, ShapeSvgStringTooLongError("Svg string has too many characters")
+	}
+	re, err  := regexp.Compile(" d=\".*\"\\/>")
+	checkErr(err)
+	matches := re.FindAllString(svgString , -1)
+	if matches != nil {
+		//TODO for-loop it ? can have multiple paths?
+		isFilledIn := checkIsFilled(matches[0])
+		path := getDPoints(matches[0])
+		shape := parseSvgPath(path)
+		shape.svg = svgString
+		shape.filledIn = isFilledIn
+		fmt.Println(shape)
+		return shape , nil
+	}
+	return Shape{}, InvalidShapeSvgStringError("not a valid shape")
+}
+
+func checkIsFilled(path string) bool {
+	re , err := regexp.Compile("fill=\".*\"")
+	checkErr(err)
+	// checking for fill
+	matches := re.FindAllString(path, -1)
+	if matches != nil {
+		isTransparent , err := regexp.MatchString("\"transparent\"", matches[0])
+		checkErr(err)
+		return !isTransparent
+	}
+	return false
+}
+
+func getDPoints(svgPath string) string {
+	re, err  := regexp.Compile("d=\".*?\"")
+	checkErr(err)
+	matches := re.FindAllString(svgPath , 1)
+	if matches != nil {
+		return matches[0]
+	}
+	return ""
+}
+
+func parseSvgPath(path string) Shape {
+	fmt.Println(path)
+	shape := Shape{}
+	currXPoint := 0
+	currYPoint := 0
+	index := 0
+
+	for {
+		if index >= len (path){
+			break
+		}
+
+		char := path[index]
+		s := string(char)
+		fmt.Println("Position "+ strconv.Itoa(index) + " looking at this char '" + s + "'")
+
+		if s == "M" {
+			onFirstNum := false
+			foundFirstNum := false
+			for i := index + 1 ; i < len(path) ; i++{
+				letter := path[i]
+				rLetter := rune(letter)
+				if unicode.IsNumber(rLetter) {
+					if onFirstNum == false {
+						onFirstNum = true
+					}
+					num , err := strconv.Atoi(string(rLetter))
+					checkErr(err)
+					if !foundFirstNum{
+						currXPoint = currXPoint * 10 + num
+					} else {
+						currYPoint = currYPoint* 10 + num
+					}
+				}
+				if unicode.IsSpace(rLetter){
+					if foundFirstNum == false && onFirstNum == true {
+						foundFirstNum = true
+					}
+				}
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter){
+					break
+				}
+				index++
+			}
+			fmt.Println(currXPoint)
+			fmt.Println(currYPoint)
+			shape.point = append(shape.point, Point{x: currXPoint, y: currYPoint})
+		}
+
+
+		if s == "m" {
+			// do we support multiple draws
+		}
+
+		if s == "H" || s == "V"{
+			value := 0
+			for i := index + 1 ; i < len(path) ; i++ {
+				letter := path[i]
+				rLetter := rune(letter)
+				if unicode.IsNumber(rLetter) {
+					num , err := strconv.Atoi(string(rLetter))
+					checkErr(err)
+					value = value * 10 + num
+				}
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter){
+					break
+				}
+				index++
+			}
+			fmt.Println("Value for "+ s + " is: " + strconv.Itoa(value))
+			if s == "H" {
+				shape.point = append(shape.point, Point{x: value, y: currYPoint})
+				currXPoint = value
+			}
+			if s == "V"{
+				shape.point = append(shape.point, Point{x: currXPoint, y: value})
+			}
+			currYPoint = value
+		}
+
+		if s == "h" || s == "v" {
+
+		}
+
+		if s == "L" || s == "l" {
+			foundFirstNum := false
+			for i := index + 1 ; i < len(path) ; i++{
+				letter := path[i]
+				rLetter := rune(letter)
+				if unicode.IsNumber(rLetter) {
+					num , err := strconv.Atoi(string(rLetter))
+					checkErr(err)
+					if !foundFirstNum{
+						currXPoint = currXPoint * 10 + num
+					} else {
+						currYPoint = currYPoint* 10 + num
+					}
+				}
+				if unicode.IsSpace(rLetter){
+					if foundFirstNum == false {
+						foundFirstNum = true
+					} else {
+						break
+					}
+				}
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter){
+					break
+				}
+				index++
+			}
+		}
+
+		if s == "Z"  || s == "z"{
+			shape.closedWithZ = true
+		}
+
+		index++
+	}
+
+	fmt.Println(shape.point)
+
+	return shape
 }
