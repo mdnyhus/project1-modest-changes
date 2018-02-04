@@ -58,14 +58,19 @@ type MinerNetSettings struct {
 	// Canvas settings
 	canvasSettings CanvasSettings
 }
+
 type Point struct {
 	x, y int
+}
+
+type Edge struct {
+	startPoint , endPoint Point
 }
 
 type Shape struct {
 	hash string
 	svg string
-	point []Point
+	point []Edge
 	filledIn bool
 	ink int
 	closedWithZ bool
