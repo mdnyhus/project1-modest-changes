@@ -70,7 +70,7 @@ type Edge struct {
 type Shape struct {
 	hash string
 	svg string
-	point []Edge
+	edges []Edge
 	filledIn bool
 	ink int
 	closedWithZ bool
