@@ -220,11 +220,91 @@ func solveNonce() {
 
 // TODO: Validate stub.
 // - Validates an operation.
-// - Adds it to currBlock's ops list.
-// - Floods ops to neighbours.
+// - If validated, adds it to currBlock's ops list, floods ops to neighbours, and returns true.
+// - if not validated, returns false and ignores the op.
 // @param op Op: Op to be validated.
-func validateOps(op Op) {
+// @return bool: True if op is valid, false otherwise
+func validateOps(op Op) bool {
+	blockLock.Lock()
+	defer blockLock.Unlock()
+
+	if isMyOp(op) && op.shape != nil {
+		// check if miner has enough ink only if op is owned by this miner
+		// and if shape is not being deleted
+		if countInk() < inkCost(op.shape) {
+			// not enough ink
+			return false
+		}
+	}
+
+	if op.shape != nil && shapeIntersects(op.shape) {
+		// op is adding a shape that intersects with an already present shape; reject
+		return false
+	}
+
+	if op.shape == nil && !shapeExists(op.shapeHash) {
+		// Op is trying to delete a shape that has been deleted
+		return false
+	}
+
+	// op is valid
+	// TODO - flood op to neighbouring miners
+	// add op to currBlock
+	currBlock.ops = append(currBlock.ops, op)
+	return true
+}
+
+// TODO
+// - checks op's hash and miner's public/private key to decide if 
+//   op belongs to this miner
+// @param op Op: Op to be checked
+// @return bool: true if op belongs to this miner, false otherwise
+func isMyOp(op Op) bool {
+	// should use op.owner
+	return false
+}
+
+// TODO
+// - calculates the amount of ink required to draw the op, in pixels
+// @param shape *blockartlib.Shape: pointer to shape whose ink cost will be calculated
+// @return int: amount of ink required to draw the shape
+func inkCost(shape *blockartlib.Shape) int {
 	// TODO
+	return 0
+}
+
+// TODO
+// - checks if the passed shape intersects with any shape currently on the canvas
+//   that is NOT owned by this miner
+// - ASSUMES that the blockLock has already been aquired
+// @param shape *blockartlib.Shape: pointer to shape that will be checked for 
+//                                  intersections
+// @return bool: true if shape does intersect with a shape currently on the canvas,
+//               false otherwise
+func shapeIntersects(shape *blockartlib.Shape) bool {
+	// TODO
+	return false
+}
+
+// TODO
+// - checks if a shape with the given hash exists on the canvas (and was not 
+//   later deleted)
+// - ASSUMES that the blockLock has already been aquired
+// @param shapeHash string: hash of shape to check
+// @return bool: true if shape does exist on the canvas, false otherwise
+func shapeExists(shapeHash string) bool {
+	// TODO
+	return false
+}
+
+// TODO
+// - counts the amount of ink currently available
+// - ASSUMES that the blockLock has already been aquired
+// @return int: ink currently available to this miner, in pixels
+func countInk() int {
+	// TODO
+	// Depends on starting ink, and how much ink you receive for each new block
+	return 0
 }
 
 func main() {
