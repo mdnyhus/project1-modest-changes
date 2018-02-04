@@ -2,42 +2,38 @@ package main
 
 import (
 	"fmt"
-	"sync"
 	"net/rpc"
+	"sync"
+	"./blockartlib"
 )
 
+// Static
+var canvasWidth int
+var canvasHeight int
+var minConn int
+
+// Current block
 var currBlock *Block
-var blockLock &sync.Mutex
+var blockLock = &sync.Mutex{}
+
+// Network
 var blockTree map[string]*Block
 var headBlock *Block
 var serverConn *rpc.Client
-var minConn int
 var neighbours []*InkMiner
+
+// FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
-var canvasWidth int
-var canvasHeight int
-
-type Point struct {
-	x, y int
-}
-
-type Shape struct {
-	hash string
-	svg string
-	point []Point
-	filledIn bool
-	ink int
-}
 
 type Op struct {
-	shape *Shape // not nil iff adding shape
+	shape     *blockartlib.Shape // not nil iff adding shape
 	shapeHash string // non-empty iff removing shape
-	owner string // hash of pub/priv keys
+	owner     string // hash of pub/priv keys
 }
 
 type Block struct {
-	prev string
-	ops []Op
+	prev  string
+	ops   []Op
 	nonce string
 }
 

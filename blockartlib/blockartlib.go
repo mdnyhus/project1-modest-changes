@@ -282,38 +282,38 @@ func parseSvgPath(path string) Shape {
 	index := 0
 
 	for {
-		if index >= len (path){
+		if index >= len(path) {
 			break
 		}
 
 		char := path[index]
 		s := string(char)
-		fmt.Println("Position "+ strconv.Itoa(index) + " looking at this char '" + s + "'")
+		fmt.Println("Position " + strconv.Itoa(index) + " looking at this char '" + s + "'")
 
 		if s == "M" {
 			onFirstNum := false
 			foundFirstNum := false
-			for i := index + 1 ; i < len(path) ; i++{
+			for i := index + 1; i < len(path); i++ {
 				letter := path[i]
 				rLetter := rune(letter)
 				if unicode.IsNumber(rLetter) {
 					if onFirstNum == false {
 						onFirstNum = true
 					}
-					num , err := strconv.Atoi(string(rLetter))
+					num, err := strconv.Atoi(string(rLetter))
 					checkErr(err)
-					if !foundFirstNum{
-						currXPoint = currXPoint * 10 + num
+					if !foundFirstNum {
+						currXPoint = currXPoint*10 + num
 					} else {
-						currYPoint = currYPoint* 10 + num
+						currYPoint = currYPoint*10 + num
 					}
 				}
-				if unicode.IsSpace(rLetter){
+				if unicode.IsSpace(rLetter) {
 					if foundFirstNum == false && onFirstNum == true {
 						foundFirstNum = true
 					}
 				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter){
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
 					break
 				}
 				index++
@@ -323,32 +323,31 @@ func parseSvgPath(path string) Shape {
 			shape.point = append(shape.point, Point{x: currXPoint, y: currYPoint})
 		}
 
-
 		if s == "m" {
 			// do we support multiple draws
 		}
 
-		if s == "H" || s == "V"{
+		if s == "H" || s == "V" {
 			value := 0
-			for i := index + 1 ; i < len(path) ; i++ {
+			for i := index + 1; i < len(path); i++ {
 				letter := path[i]
 				rLetter := rune(letter)
 				if unicode.IsNumber(rLetter) {
-					num , err := strconv.Atoi(string(rLetter))
+					num, err := strconv.Atoi(string(rLetter))
 					checkErr(err)
-					value = value * 10 + num
+					value = value*10 + num
 				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter){
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
 					break
 				}
 				index++
 			}
-			fmt.Println("Value for "+ s + " is: " + strconv.Itoa(value))
+			fmt.Println("Value for " + s + " is: " + strconv.Itoa(value))
 			if s == "H" {
 				shape.point = append(shape.point, Point{x: value, y: currYPoint})
 				currXPoint = value
 			}
-			if s == "V"{
+			if s == "V" {
 				shape.point = append(shape.point, Point{x: currXPoint, y: value})
 			}
 			currYPoint = value
@@ -360,33 +359,33 @@ func parseSvgPath(path string) Shape {
 
 		if s == "L" || s == "l" {
 			foundFirstNum := false
-			for i := index + 1 ; i < len(path) ; i++{
+			for i := index + 1; i < len(path); i++ {
 				letter := path[i]
 				rLetter := rune(letter)
 				if unicode.IsNumber(rLetter) {
-					num , err := strconv.Atoi(string(rLetter))
+					num, err := strconv.Atoi(string(rLetter))
 					checkErr(err)
-					if !foundFirstNum{
-						currXPoint = currXPoint * 10 + num
+					if !foundFirstNum {
+						currXPoint = currXPoint*10 + num
 					} else {
-						currYPoint = currYPoint* 10 + num
+						currYPoint = currYPoint*10 + num
 					}
 				}
-				if unicode.IsSpace(rLetter){
+				if unicode.IsSpace(rLetter) {
 					if foundFirstNum == false {
 						foundFirstNum = true
 					} else {
 						break
 					}
 				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter){
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
 					break
 				}
 				index++
 			}
 		}
 
-		if s == "Z"  || s == "z"{
+		if s == "Z" || s == "z" {
 			shape.closedWithZ = true
 		}
 
@@ -396,4 +395,11 @@ func parseSvgPath(path string) Shape {
 	fmt.Println(shape.point)
 
 	return shape
+}
+
+func InkUsed(shape *Shape) (ink int, err error) {
+	ink = 0
+	// get border length of shape
+
+	return ink, nil
 }
