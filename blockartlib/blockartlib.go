@@ -448,7 +448,7 @@ func InkUsed(shape *Shape) (ink int, err error) {
 		// meaning first we have to find if the shape produced by the edges is closed
 		// todo: https://piazza.com/class/jbyh5bsk4ez3cn?cid=348 done with the assumption
 		// the vote for "Simple, closed curve" will win.
-
+		// do this after the vote is completed and the criteria confirmed
 	}
 	return ink, nil
 }
@@ -485,12 +485,26 @@ func ShapesIntersect (A Shape, B Shape) bool {
 
 // https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
 func EdgesIntersect(A Edge, B Edge) bool {
+	// 1: Do bounding boxes of each edge intersect?
+	if !(A.startPoint.x <= B.endPoint.x &&
+		A.endPoint.x >= B.startPoint.x &&
+		A.startPoint.y <= B.endPoint.y &&
+		A.endPoint.y >= B.startPoint.y) {
+			return false
+	}
+	// 2: Does edge A intersect with edge segment B?
+	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
+	//Ax :=
 
+	// 3: Does edge B intersect with edge segment A?
+	return false
 }
+
+
 
 // https://en.wikipedia.org/wiki/Point_in_polygon
 func pointInShape(point Point, shape Shape) bool {
-
+	return false
 }
 
 func getLengthOfEdge(edge Edge) (length float64) {
