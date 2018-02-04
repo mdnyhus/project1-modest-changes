@@ -492,15 +492,31 @@ func EdgesIntersect(A Edge, B Edge) bool {
 		A.endPoint.y >= B.startPoint.y) {
 			return false
 	}
+
 	// 2: Does edge A intersect with edge segment B?
+	// 2a: Check if the start or end point of B is on line A - this is for parallel lines
+	var edgeA Edge = Edge{startPoint:Point{x:0, y:0},
+		endPoint:Point{x:A.endPoint.x - A.startPoint.x, y:A.endPoint.y - A.startPoint.y}}
+	var pointB1 Point = Point{x: B.startPoint.x - A.startPoint.x, y:B.startPoint.y - A.startPoint.y}
+	if edgeA.endPoint.x * pointB1.y - pointB1.x * edgeA.endPoint.y == 0 {
+		return true
+	}
+	pointB2 := Point{x: B.endPoint.x - A.startPoint.x, y: B.endPoint.y - A.startPoint.y}
+	if edgeA.endPoint.x * pointB2.y - pointB2.x * edgeA.endPoint.y == 0 {
+		return true
+	}
+	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
+	// if they are, the lines intersect
 	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
-	//Ax :=
-
-	// 3: Does edge B intersect with edge segment A?
-	return false
+	pointB1 = B.startPoint
+	pointB2 = B.endPoint
+	crossProduct1 := (A.endPoint.x - A.startPoint.x) * (pointB1.y - A.endPoint.y) -
+		(A.endPoint.y - A.startPoint.y) * (pointB1.x - A.endPoint.x)
+	crossProduct2 := (A.endPoint.x - A.startPoint.x) * (pointB2.y - A.endPoint.y) -
+		(A.endPoint.y - A.startPoint.y) * (pointB2.x - A.endPoint.x)
+	// if intersect, the signs of these cross products will be different
+	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
 }
-
-
 
 // https://en.wikipedia.org/wiki/Point_in_polygon
 func pointInShape(point Point, shape Shape) bool {
