@@ -9,6 +9,7 @@ package blockartlib
 
 import "crypto/ecdsa"
 import "fmt"
+import "./ink-miner.go"
 
 // Represents a type of shape in the BlockArt system.
 type ShapeType int
@@ -196,4 +197,10 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	// TODO
 	// For now return DisconnectedError
 	return nil, CanvasSettings{}, DisconnectedError("")
+}
+
+
+
+func svgToShape(svgString string) {
+
 }
