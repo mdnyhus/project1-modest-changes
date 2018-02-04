@@ -63,13 +63,13 @@ type MinMin int
 type BlockNotFoundError string
 
 func (e BlockNotFoundError) Error() string {
-	return fmt.Sprintf("InkMiner: Could not find block with nonce %s", string(e))
+	return fmt.Sprintf("InkMiner: Could not find block with hash %s", string(e))
 }
 
 type BlockVerificationError string
 
 func (e BlockVerificationError) Error() string {
-	return fmt.Sprintf("InkMiner: Block with nonce %s could not be verified", string(e))
+	return fmt.Sprintf("InkMiner: Block with hash %s could not be verified", string(e))
 }
 
 // TODO RPC calls feel a bit burdensome here.
@@ -86,7 +86,7 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 	for !isGenesis(*currBlock) {
 		if verifyHash(hashBlock(*currBlock)) {
 			len++
-			currBlock = getBlock(currBlock.nonce)
+			currBlock = getBlock(currBlock.prev)
 			if currBlock == nil {
 				// Could not verify due to missing block in chain.
 				return BlockVerificationError(block.nonce)
@@ -117,10 +117,10 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 // @param nonce *string: Nonce of block to be returned.
 // @param block *Block: Pointer to block specified by nonce.
 // @return error: Any errors produced in retrieval of block.
-func (m *MinMin) RequestBlock(nonce *string, block *Block) error {
-	block = blockTree[*nonce]
+func (m *MinMin) RequestBlock(hash *string, block *Block) error {
+	block = blockTree[*hash]
 	if block == nil {
-		return BlockNotFoundError(*nonce)
+		return BlockNotFoundError(*hash)
 	}
 	return nil
 }
@@ -128,20 +128,20 @@ func (m *MinMin) RequestBlock(nonce *string, block *Block) error {
 // Returns block with given nonce. Will search neighbours if not found locally.
 // @param nonce string: The nonce of the block to get info on.
 // @return Block: The requested block, or nil if no block is found.
-func getBlock(nonce string) (block *Block) {
+func getBlock(hash string) (block *Block) {
 	// Search locally.
-	if block = blockTree[nonce]; block != nil {
+	if block = blockTree[hash]; block != nil {
 		return block
 	}
 
 	for _, n := range neighbours {
-		err := n.conn.Call("MinMin.RequestBlock", nonce, block)
+		err := n.conn.Call("MinMin.RequestBlock", hash, block)
 		if err != nil {
 			// Block not found, keep searching.
 			continue
 		}
 		// Save block locally.
-		blockTree[nonce] = block
+		blockTree[hash] = block
 		return block
 	}
 
