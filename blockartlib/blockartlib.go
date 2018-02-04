@@ -422,6 +422,46 @@ func InkUsed(shape *Shape) (ink int, err error) {
 	return ink, nil
 }
 
+/*
+1. First find if there's an intersection between the edges of the two polygons.
+2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+4. If not, then you can conclude that the two polygons are completely outside each other.
+*/
+
+func ShapesIntersect (A Shape, B Shape) bool {
+	//1
+	for i := 0; i < len(A.edges); i++ {
+		for j := 0; j < len(B.edges); j++ {
+			if EdgesIntersect(A.edges[i], B.edges[j]) {
+				return true
+			}
+		}
+	}
+	//2
+	pointA := A.edges[0].startPoint
+	if pointInShape(pointA, B) {
+		return true
+	}
+	//3
+	pointB := B.edges[0].startPoint
+	if pointInShape(pointB, A) {
+		return true
+	}
+	//4
+	return false
+}
+
+// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
+func EdgesIntersect(A Edge, B Edge) bool {
+
+}
+
+// https://en.wikipedia.org/wiki/Point_in_polygon
+func pointInShape(point Point, shape Shape) bool {
+
+}
+
 func getLengthOfEdge(edge Edge) (length float64) {
 	// a^2 + b^2 = c^2
 	// a = horizontal length, b = vertical length
