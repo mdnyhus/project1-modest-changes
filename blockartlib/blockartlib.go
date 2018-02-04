@@ -235,27 +235,25 @@ func checkSvgStringlen(svgString string) bool{
 /* TODO: a lot of edge cases here for the svg
 	- lifting up the pen nultiple "m"
 	- different key words , filter out id="" or something with two d's
+	- does an svg have one path, if not we can loop through all the matches
 */
 
 func SvgToShape(svgString string) (Shape, error) {
 	if checkSvgStringlen(svgString){
 		return Shape{}, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
+
+	// getting the d-paths , include fill and other properties
 	re, err  := regexp.Compile(" d=\".*\"\\/>")
 	checkErr(err)
 	matches := re.FindAllString(svgString , -1)
 	if matches != nil {
-		//TODO for-loop it ? can have multiple paths?
-		isFilledIn := checkIsFilled(matches[0])
 		path := getDPoints(matches[0])
 		shape, err := parseSvgPath(path)
-		if err != nil {
-			return Shape{}, err
-		}
 		shape.svg = svgString
-		shape.filledIn = isFilledIn
+		shape.filledIn = checkIsFilled(matches[0])
 		fmt.Println(shape)
-		return shape , nil
+		return shape , err
 	}
 	return Shape{}, InvalidShapeSvgStringError("not a valid shape")
 }
@@ -273,6 +271,7 @@ func checkIsFilled(path string) bool {
 	return false
 }
 
+// only return the first d path and just the contents within the quotation marks
 func getDPoints(svgPath string) string {
 	re, err  := regexp.Compile("d=\".*?\"")
 	checkErr(err)
@@ -283,6 +282,8 @@ func getDPoints(svgPath string) string {
 	return ""
 }
 
+// TODO: what should we error out, svg paths are someone error prone
+//  - there can be many edge cases where an svg can be technically rendered
 func parseSvgPath(path string) (Shape, error) {
 	fmt.Println(path)
 	shape := Shape{}
@@ -302,6 +303,7 @@ func parseSvgPath(path string) (Shape, error) {
 		s := string(char)
 		fmt.Println("Position " + strconv.Itoa(index) + " looking at this char '" + s + "'")
 
+		// 2 Numbers following the keyword case
 		if s == "M" || s == "m" || s == "L" || s == "l"{
 			xPoint := 0
 			yPoint := 0
@@ -320,7 +322,6 @@ func parseSvgPath(path string) (Shape, error) {
 					if onSecondNum == false {
 						onSecondNum = true
 					}
-
 					if finishedSecondNumber == true {
 						fmt.Println("errored")
 						return Shape{}, InvalidShapeSvgStringError("can not have more than three numbers behind M")
@@ -343,6 +344,7 @@ func parseSvgPath(path string) (Shape, error) {
 					}
 				}
 				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
+					//not handing mid value letters
 					break
 				}
 				index++
@@ -375,8 +377,8 @@ func parseSvgPath(path string) (Shape, error) {
 			}
 		}
 
+		// 1 Numbers following the keyword case
 		if s == "H" || s == "V" || s == "h" || s == "v" {
-			//getting the value
 			value := 0
 			for i := index + 1; i < len(path); i++ {
 				letter := path[i]
@@ -423,11 +425,13 @@ func parseSvgPath(path string) (Shape, error) {
 			}
 		}
 
+		// special case Z
 		if s == "Z" || s == "z" {
 			edge := Edge{startPoint:Point{currXPoint, currYPoint}, endPoint:Point{originXPoint, originYPoint}}
 			shape.edges = append(shape.edges, edge)
 			shape.closedWithZ = true
 		}
+		// else move on
 		index++
 	}
 	
