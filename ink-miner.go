@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"./blockartlib"
 )
 
 // Static
@@ -35,22 +36,10 @@ var serverConn *rpc.Client
 // FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
-type Point struct {
-	x, y int
-}
-
-type Shape struct {
-	hash     string
-	svg      string
-	point    []Point
-	filledIn bool
-	ink      int
-}
-
 type Op struct {
-	shape     *Shape // not nil iff adding shape.
-	shapeHash string // non-empty iff removing shape.
-	owner     string // hash of pub/priv keys.
+	shape     *blockartlib.Shape // not nil iff adding shape
+	shapeHash string // non-empty iff removing shape
+	owner     string // hash of pub/priv keys
 }
 
 type Block struct {
