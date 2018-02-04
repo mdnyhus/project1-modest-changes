@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"unicode"
+	"math"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -481,7 +482,68 @@ func parseSvgPath(path string) (Shape, error) {
 
 func InkUsed(shape *Shape) (ink int, err error) {
 	ink = 0
-	// get border length of shape
+	// get border length of shape - just add all the edges up!
+	var edgeLength float64 = 0
+	for i := 0; i < len(shape.edges); i++ {
+		edgeLength += getLengthOfEdge(shape.edges[i])
+	}
+	// since int is an int, floor the edge lengths
+	ink += int(math.Floor(edgeLength))
+	if shape.filledIn {
+		// if shape has non-transparent ink, need to find the area of it
+		// meaning first we have to find if the shape produced by the edges is closed
+		// todo: https://piazza.com/class/jbyh5bsk4ez3cn?cid=348 done with the assumption
+		// the vote for "Simple, closed curve" will win.
 
+	}
 	return ink, nil
+}
+
+/*
+1. First find if there's an intersection between the edges of the two polygons.
+2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+4. If not, then you can conclude that the two polygons are completely outside each other.
+*/
+
+func ShapesIntersect (A Shape, B Shape) bool {
+	//1
+	for i := 0; i < len(A.edges); i++ {
+		for j := 0; j < len(B.edges); j++ {
+			if EdgesIntersect(A.edges[i], B.edges[j]) {
+				return true
+			}
+		}
+	}
+	//2
+	pointA := A.edges[0].startPoint
+	if pointInShape(pointA, B) {
+		return true
+	}
+	//3
+	pointB := B.edges[0].startPoint
+	if pointInShape(pointB, A) {
+		return true
+	}
+	//4
+	return false
+}
+
+// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
+func EdgesIntersect(A Edge, B Edge) bool {
+
+}
+
+// https://en.wikipedia.org/wiki/Point_in_polygon
+func pointInShape(point Point, shape Shape) bool {
+
+}
+
+func getLengthOfEdge(edge Edge) (length float64) {
+	// a^2 + b^2 = c^2
+	// a = horizontal length, b = vertical length
+	a2b2 := math.Pow(float64((edge.startPoint.x - edge.endPoint.x)), 2) +
+		math.Pow(float64((edge.startPoint.y - edge.endPoint.y)), 2)
+	c := math.Sqrt(a2b2)
+	return c
 }
