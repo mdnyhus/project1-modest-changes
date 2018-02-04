@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"unicode"
+	"math"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -404,7 +405,28 @@ func parseSvgPath(path string) Shape {
 
 func InkUsed(shape *Shape) (ink int, err error) {
 	ink = 0
-	// get border length of shape
+	// get border length of shape - just add all the edges up!
+	var edgeLength float64 = 0
+	for i := 0; i < len(shape.edges); i++ {
+		edgeLength += getLengthOfEdge(shape.edges[i])
+	}
+	// since int is an int, floor the edge lengths
+	ink += int(math.Floor(edgeLength))
+	if shape.filledIn {
+		// if shape has non-transparent ink, need to find the area of it
+		// meaning first we have to find if the shape produced by the edges is closed
+		// todo: https://piazza.com/class/jbyh5bsk4ez3cn?cid=348 done with the assumption
+		// the vote for "Simple, closed curve" will win.
 
+	}
 	return ink, nil
+}
+
+func getLengthOfEdge(edge Edge) (length float64) {
+	// a^2 + b^2 = c^2
+	// a = horizontal length, b = vertical length
+	a2b2 := math.Pow(float64((edge.startPoint.x - edge.endPoint.x)), 2) +
+		math.Pow(float64((edge.startPoint.y - edge.endPoint.y)), 2)
+	c := math.Sqrt(a2b2)
+	return c
 }
