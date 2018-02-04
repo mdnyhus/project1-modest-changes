@@ -302,7 +302,7 @@ func parseSvgPath(path string) (Shape, error) {
 		s := string(char)
 		fmt.Println("Position " + strconv.Itoa(index) + " looking at this char '" + s + "'")
 
-		if s == "M" || s == "m"{
+		if s == "M" || s == "m" || s == "L" || s == "l"{
 			xPoint := 0
 			yPoint := 0
 			onFirstNum := false
@@ -348,16 +348,31 @@ func parseSvgPath(path string) (Shape, error) {
 				index++
 			}
 
-			if s == "M" {
-				currXPoint = xPoint
-				currYPoint = yPoint
+			if s == "L" || s == "l" {
+				startPoint := Point{currXPoint, currYPoint}
+				var endPoint Point
+				if s == "L" {
+					endPoint.x = xPoint
+					endPoint.y = yPoint
+				} else if s == "l" {
+					endPoint.x = currXPoint + xPoint
+					endPoint.y = currYPoint + yPoint
+				}
+				currXPoint = endPoint.x
+				currYPoint = endPoint.y
+				edge := Edge{startPoint, endPoint}
+				shape.edges = append(shape.edges, edge)
 			} else {
-				currXPoint = currXPoint + xPoint
-				currYPoint = currYPoint + yPoint
+				if s == "M" {
+					currXPoint = xPoint
+					currYPoint = yPoint
+				} else if s == "m" {
+					currXPoint = currXPoint + xPoint
+					currYPoint = currYPoint + yPoint
+				}
+				originXPoint = currXPoint
+				originYPoint = currYPoint
 			}
-
-			originXPoint = currXPoint
-			originYPoint = currYPoint
 		}
 
 		if s == "H" || s == "V" || s == "h" || s == "v" {
@@ -406,67 +421,6 @@ func parseSvgPath(path string) (Shape, error) {
 				edge := Edge{startPoint, endPoint}
 				shape.edges = append(shape.edges, edge)
 			}
-		}
-
-		if s == "L" || s == "l" {
-			xPoint := 0
-			yPoint := 0
-			onFirstNum := false
-			onSecondNum := false
-			finishedFirstNumber := false
-			finishedSecondNumber := false
-			for i := index + 1; i < len(path); i++ {
-				letter := path[i]
-				rLetter := rune(letter)
-				if unicode.IsNumber(rLetter) {
-					if onFirstNum == false {
-						onFirstNum = true
-					}
-					if onSecondNum == false {
-						onSecondNum = true
-					}
-
-					if finishedSecondNumber == true {
-						fmt.Println("errored")
-						return Shape{}, InvalidShapeSvgStringError("can not have more than three numbers behind L")
-					}
-
-					num, err := strconv.Atoi(string(rLetter))
-					checkErr(err)
-					if !finishedFirstNumber {
-						xPoint = xPoint*10 + num
-					} else {
-						yPoint = yPoint*10 + num
-					}
-				}
-				if unicode.IsSpace(rLetter) {
-					if finishedFirstNumber == false && onFirstNum == true {
-						// finished first number
-						finishedFirstNumber = true
-					} else if finishedSecondNumber == false && onSecondNum == true {
-						finishedSecondNumber = true
-					}
-				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
-					break
-				}
-				index++
-			}
-
-			fmt.Println(xPoint , yPoint)
-			startPoint := Point{currXPoint, currYPoint}
-			var endPoint Point
-			if s == "L" {
-				endPoint.x = xPoint
-				endPoint.y = yPoint
-			} else {
-				endPoint.x = currXPoint + xPoint
-				endPoint.y = currYPoint + yPoint
-			}
-			currXPoint = endPoint.x
-			currYPoint = endPoint.y
-			edge := Edge{startPoint, endPoint}
-			shape.edges = append(shape.edges, edge)
 		}
 
 		if s == "Z" || s == "z" {
