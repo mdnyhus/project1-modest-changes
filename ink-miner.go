@@ -262,6 +262,13 @@ func solveNonce() {
 // @param op Op: Op to be validated.
 // @return bool: True if op is valid, false otherwise
 func validateOp(op Op) bool {
+	if op.shape != nil {
+		if !validateShape(shape *blockartlib.Shape) {
+			// shape is not valid
+			return false
+		}
+	}
+
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
@@ -303,13 +310,24 @@ func isMyOp(op Op) (isMyOp bool) {
 }
 
 // TODO
+// Checks if the passed shape is valid according to the spec
+// - TODO shape fill spec re. convex or self-intersections
+// - shape points are within the canvas
+// @param shape *blockartlib.Shape: pointer to shape that will be validated
+// @return valid bool: true if shape is valid, false otherwise 
+func validateShape(shape *blockartlib.Shape) (valid bool) {
+	// TODO
+	return false
+}
+
+// TODO
 // - checks if the passed shape intersects with any shape currently on the canvas
 //   that is NOT owned by this miner
 // - ASSUMES that the blockLock has already been aquired
 // @param shape *blockartlib.Shape: pointer to shape that will be checked for 
 //                                  intersections
-// @return shapeIntersectsbool: true if shape does intersect with a shape 
-//                              currently on the canvas, false otherwise
+// @return shapeIntersects bool: true if shape does intersect with a shape 
+//                               currently on the canvas, false otherwise
 func shapeIntersects(shape *blockartlib.Shape) (shapeIntersects bool) {
 	// TODO
 	return false
