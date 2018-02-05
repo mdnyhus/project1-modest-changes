@@ -490,11 +490,12 @@ func ShapesIntersect (A Shape, B Shape) bool {
 // https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
 func EdgesIntersect(A Edge, B Edge) bool {
 	// 1: Do bounding boxes of each edge intersect?
-	if !(A.startPoint.x <= B.endPoint.x &&
-		A.endPoint.x >= B.startPoint.x &&
-		A.startPoint.y <= B.endPoint.y &&
-		A.endPoint.y >= B.startPoint.y) {
-			return false
+
+	var boxA Box = buildBoundingBox(A)
+	var boxB Box = buildBoundingBox(B)
+
+	if !boxesIntersect(boxA, boxB) {
+		return false
 	}
 
 	// 2: Does edge A intersect with edge segment B?
@@ -502,11 +503,8 @@ func EdgesIntersect(A Edge, B Edge) bool {
 	var edgeA Edge = Edge{startPoint:Point{x:0, y:0},
 		endPoint:Point{x:A.endPoint.x - A.startPoint.x, y:A.endPoint.y - A.startPoint.y}}
 	var pointB1 Point = Point{x: B.startPoint.x - A.startPoint.x, y:B.startPoint.y - A.startPoint.y}
-	if edgeA.endPoint.x * pointB1.y - pointB1.x * edgeA.endPoint.y == 0 {
-		return true
-	}
-	pointB2 := Point{x: B.endPoint.x - A.startPoint.x, y: B.endPoint.y - A.startPoint.y}
-	if edgeA.endPoint.x * pointB2.y - pointB2.x * edgeA.endPoint.y == 0 {
+	var pointB2 Point = Point{x: B.endPoint.x - A.startPoint.x, y: B.endPoint.y - A.startPoint.y}
+	if pointsAreOnOrigin(edgeA.endPoint, pointB1) || pointsAreOnOrigin(edgeA.endPoint, pointB2) {
 		return true
 	}
 	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
@@ -522,9 +520,49 @@ func EdgesIntersect(A Edge, B Edge) bool {
 	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
 }
 
-// https://en.wikipedia.org/wiki/Point_in_polygon
+type Box struct {
+	MinX int
+	MinY int
+	MaxX int
+	MaxY int
+}
+
+func buildBoundingBox(A Edge) Box {
+	var boxA Box = Box{}
+	if A.startPoint.x > A.endPoint.x {
+		boxA.MaxX = A.startPoint.x
+		boxA.MinX = A.endPoint.x
+	} else {
+		boxA.MaxX = A.endPoint.x
+		boxA.MinX = A.startPoint.x
+	}
+	if A.startPoint.y > A.endPoint.y {
+		boxA.MaxY = A.startPoint.y
+		boxA.MinY = A.endPoint.y
+	} else {
+		boxA.MaxY = A.endPoint.y
+		boxA.MinY = A.startPoint.y
+	}
+	return boxA
+}
+
+func boxesIntersect(A Box, B Box) bool {
+	return A.MaxX >= B.MinX &&
+		A.MinX <= B.MaxX &&
+			A.MaxY >= B.MinY &&
+				A.MinY <= B.MaxY
+}
+
+// https://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
 func pointInShape(point Point, shape Shape) bool {
+	//var extendX int = 100000 //todo: replace this number with what the canvas bound is, I can't find it at this moment
+	//var edge Edge = Edge{startPoint:point, endPoint:Point{x:point.x + 1000000, y: point.y}}
+
 	return false
+}
+
+func pointsAreOnOrigin(A Point, B Point) bool {
+	return A.x * B.y - B.x * A.y == 0
 }
 
 func getLengthOfEdge(edge Edge) (length float64) {
