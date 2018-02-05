@@ -72,6 +72,17 @@ func (e BlockVerificationError) Error() string {
 	return fmt.Sprintf("InkMiner: Block with hash %s could not be verified", string(e))
 }
 
+// Receives op block flood calls. Verifies the op, which will add the op to currBlock and flood
+// op if it is valid.
+// @param op *Op: Op which will be verified, and potentially added and flooeded
+// @param reply *bool: Bool indicating whether op was successfully validated
+// @return error: TODO
+func (m *MinMin) NotifyNewOp(op *Op, reply *bool) (err error) {
+	// if op is validated, validateOp will put op in currBlock itself and flood the op
+	*reply = validateOp(*op)
+	return nil
+}
+
 // TODO RPC calls feel a bit burdensome here.
 // Receives block flood calls. Verifies chains. Updates head block if new chain is acknowledged.
 // LOCKS: Calls headBlockLock()
@@ -172,11 +183,36 @@ func verifyHash(hash string) bool {
 	return hash[len(hash)-n:] == strings.Repeat("0", n)
 }
 
-// TODO: Validate stub.
+// TODO this and floodBlock currentl share almost all the code. If worth it, call helper
+//      function that takes the function and paramters.
 // Sends op to all neighbours.
+// LOCKS: Calls neighboursLock.Lock().
 // @param op Op: Op to be broadcast.
-func floodOps(op Op) {
-	// TODO -- should prob be async. See rpc.Go & select.
+func floodOp(op Op) {
+	// Prevent other processes from adding/removing neighbours.
+	neighboursLock.Lock()
+	defer neighboursLock.Unlock()
+
+	replies := 0
+	replyChan := make(chan *rpc.Call, 1)
+
+	for _, n := range neighbours {
+		var reply bool
+		_ = n.conn.Go("NotifyNewOp", op, &reply, replyChan)
+	}
+
+	// TODO: Handle errors, chain disagreements. Discuss with team.
+	// Current implementation simply sends out blocks and doesn't
+	// care about the response.
+	for replies != len(neighbours) {
+		select {
+		case <-replyChan:
+			replies++
+		case <-time.After(2 * time.Second):
+			// TODO Do we care? Noop for now.
+			replies++
+		}
+	}
 }
 
 // Sends block to all neighbours.
@@ -220,11 +256,103 @@ func solveNonce() {
 
 // TODO: Validate stub.
 // - Validates an operation.
-// - Adds it to currBlock's ops list.
-// - Floods ops to neighbours.
+// - If validated, adds it to currBlock's ops list, floods ops to neighbours, and returns true.
+// - if not validated, returns false and ignores the op.
+// LOCKS: Calls blockLock.Lock()
 // @param op Op: Op to be validated.
-func validateOps(op Op) {
+// @return bool: True if op is valid, false otherwise
+func validateOp(op Op) bool {
+	if op.shape != nil {
+		if !validateShape(shape *blockartlib.Shape) {
+			// shape is not valid
+			return false
+		}
+	}
+
+	blockLock.Lock()
+	defer blockLock.Unlock()
+
+	if isMyOp(op) && op.shape != nil {
+		// check if miner has enough ink only if op is owned by this miner
+		// and if shape is not being deleted
+		ink, err := blockartlib.InkUsed(op.shape)
+		if err != nil || countInk() < ink {
+			// not enough ink
+			return false
+		}
+	}
+
+	if op.shape != nil && shapeIntersects(op.shape) {
+		// op is adding a shape that intersects with an already present shape; reject
+		return false
+	}
+
+	if op.shape == nil && !shapeExists(op.shapeHash) {
+		// Op is trying to delete a shape that has been deleted
+		return false
+	}
+
+	// op is valid; add op to currBlock
+	currBlock.ops = append(currBlock.ops, op)
+	// floodOp on a separate thread; this miner's operation doesn't depend on the flood
+	go floodOp(op)
+	return true
+}
+
+// TODO
+// - checks op's hash and miner's public/private key to decide if 
+//   op belongs to this miner
+// @param op Op: Op to be checked
+// @return isMine bool: true if op belongs to this miner, false otherwise
+func isMyOp(op Op) (isMyOp bool) {
+	// should use op.owner
+	return false
+}
+
+// TODO
+// Checks if the passed shape is valid according to the spec
+// - TODO shape fill spec re. convex or self-intersections
+// - shape points are within the canvas
+// @param shape *blockartlib.Shape: pointer to shape that will be validated
+// @return valid bool: true if shape is valid, false otherwise 
+func validateShape(shape *blockartlib.Shape) (valid bool) {
 	// TODO
+	return false
+}
+
+// TODO
+// - checks if the passed shape intersects with any shape currently on the canvas
+//   that is NOT owned by this miner
+// - ASSUMES that the blockLock has already been aquired
+// @param shape *blockartlib.Shape: pointer to shape that will be checked for 
+//                                  intersections
+// @return shapeIntersects bool: true if shape does intersect with a shape 
+//                               currently on the canvas, false otherwise
+func shapeIntersects(shape *blockartlib.Shape) (shapeIntersects bool) {
+	// TODO
+	return false
+}
+
+// TODO
+// - checks if a shape with the given hash exists on the canvas (and was not 
+//   later deleted)
+// - ASSUMES that the blockLock has already been aquired
+// @param shapeHash string: hash of shape to check
+// @return shapeExists bool: true if shape does exist on the canvas, 
+//                           false otherwise
+func shapeExists(shapeHash string) (shapeExists bool) {
+	// TODO
+	return false
+}
+
+// TODO
+// - counts the amount of ink currently available
+// - ASSUMES that the blockLock has already been aquired
+// @return ink int: ink currently available to this miner, in pixels
+func countInk() (ink int) {
+	// TODO
+	// Depends on starting ink, and how much ink you receive for each new block
+	return 0
 }
 
 func main() {

@@ -438,6 +438,11 @@ func parseSvgPath(path string) (Shape, error) {
 	return shape , nil
 }
 
+// TODO
+// - calculates the amount of ink required to draw the shape, in pixels
+// @param shape *blockartlib.Shape: pointer to shape whose ink cost will be calculated
+// @return ink int: amount of ink required to draw the shape
+// @return error err: TODO
 func InkUsed(shape *Shape) (ink int, err error) {
 	ink = 0
 	// get border length of shape - just add all the edges up!
