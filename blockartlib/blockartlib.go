@@ -270,14 +270,14 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	canvasT.minerAddr = minerAddr
 	canvasT.privKey = privKey
 
-	setting = CanvasSettings{}
-
 	// connect to miner
 	if canvasT.client, err = rpc.Dial("tcp", minerAddr); err != nil {
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
 
-	// TODO - get canvasSettings
+	if err = canvasT.client.Call("LimMin.GetCanvasSettings", 0, &setting); err != nil {
+		return canvasT, setting, DisconnectedError(minerAddr)
+	}
 
 	return canvasT, setting, nil
 }

@@ -1,9 +1,22 @@
+/*
+Implements the ink-miner for project 1 for UBC CS 416 2017 W2.
+
+Usage:
+$ go run ink-miner.go [client-incoming ip:port]
+
+Example:
+$ go run ink-miner.go 127.0.0.1:2020
+
+*/
+
 package main
 
 import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"net"
 	"net/rpc"
 	"strings"
 	"sync"
@@ -12,8 +25,7 @@ import (
 )
 
 // Static
-var canvasWidth int
-var canvasHeight int
+var canvasSettings blockartlib.CanvasSettings
 var minConn int
 var n int // Num 0's required in POW
 
@@ -32,6 +44,7 @@ var neighboursLock = &sync.Mutex{}
 // Network
 var blockTree map[string]*Block
 var serverConn *rpc.Client
+var address string
 
 // FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
@@ -133,6 +146,14 @@ func (m *MinMin) RequestBlock(hash *string, block *Block) error {
 	if block == nil {
 		return BlockNotFoundError(*hash)
 	}
+	return nil
+}
+
+// RPC for blockartlib-miner connection
+type LibMin int
+
+func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) (err error) {
+	*reply = canvasSettings
 	return nil
 }
 
@@ -356,5 +377,36 @@ func countInk() (ink int) {
 }
 
 func main() {
-	fmt.Println("vim-go")
+	// ink-miner should take one parameter, which is its address
+	// skip program
+	args := os.Args[1:]
+
+	numArgs := 1
+
+	// check number of arguments
+	if len(args) != numArgs {
+		if len(args) < numArgs {
+			fmt.Printf("too few arguments; expected %d, received%d\n", numArgs, len(args))
+		} else {
+			fmt.Printf("too many arguments; expected %d, received%d\n", numArgs, len(args))
+		}
+		// can't proceed without correct number of arguments
+		return
+	}
+
+	address = args[0]
+
+	// TODO - should communicate with server to get CanvasSettings and other miners in the network
+
+	// Setup RPC
+	server := rpc.NewServer()
+	libMin := new(LibMin)
+	server.Register(libMin)
+	l, e := net.Listen("tcp", address)
+	if e != nil {
+		return
+	}
+	go server.Accept(l)
+	
+	// TODO - should start mining
 }
