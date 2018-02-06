@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"unicode"
 	"math"
+	"crypto/md5"
+	"encoding/hex"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -252,6 +254,7 @@ func SvgToShape(svgString string) (Shape, error) {
 		shape, err := parseSvgPath(path)
 		shape.svg = svgString
 		shape.filledIn = checkIsFilled(matches[0])
+		shape.hash = hashShape(shape)
 		fmt.Println(shape)
 		return shape , err
 	}
@@ -269,6 +272,13 @@ func checkIsFilled(path string) bool {
 		return !isTransparent
 	}
 	return false
+}
+
+func hashShape(shape Shape) string {
+	hasher := md5.New()
+	s := fmt.Sprintf("%v", shape)
+	hash := hasher.Sum([]byte(s))
+	return hex.EncodeToString(hash)
 }
 
 // only return the first d path and just the contents within the quotation marks
