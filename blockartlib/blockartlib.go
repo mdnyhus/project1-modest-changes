@@ -220,7 +220,8 @@ type Canvas interface {
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
 	// TODO
 	// For now return DisconnectedError
-	return nil, CanvasSettings{}, DisconnectedError("")
+	canvasInstance := CanvasInstance{}
+	return canvasInstance, CanvasSettings{}, DisconnectedError("")
 }
 
 func checkErr(err error){
@@ -259,6 +260,31 @@ func SvgToShape(svgString string) (Shape, error) {
 		return shape , err
 	}
 	return Shape{}, InvalidShapeSvgStringError("not a valid shape")
+}
+
+/*
+	Check if all the edges in the shape are within the campus
+	// Todo
+	// @param: takes a shape assembled from the svg string, and canvas settings
+*/
+func SvgIsInCanvas(shape Shape, settings CanvasSettings) bool {
+	canvasXMax := int(settings.CanvasXMax)
+	canvasYMax := int(settings.CanvasYMax)
+	for _ , edge := range shape.edges{
+ 		if edge.startPoint.x > canvasXMax {
+			return false
+		}
+		if edge.startPoint.y > canvasYMax {
+			return false
+		}
+		if edge.endPoint.x > canvasXMax {
+			return false
+		}
+		if edge.endPoint.y > canvasYMax {
+			return false
+		}
+	}
+	return true
 }
 
 func checkIsFilled(path string) bool {
