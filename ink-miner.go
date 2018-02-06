@@ -92,7 +92,8 @@ func (e BlockVerificationError) Error() string {
 // @return error: TODO
 func (m *MinMin) NotifyNewOp(op *Op, reply *bool) (err error) {
 	// if op is validated, validateOp will put op in currBlock itself and flood the op
-	*reply = validateOp(*op)
+	// TODO - is the error from validateOp useful?
+	*reply, _ = validateOp(*op)
 	return nil
 }
 
@@ -152,8 +153,35 @@ func (m *MinMin) RequestBlock(hash *string, block *Block) error {
 // RPC for blockartlib-miner connection
 type LibMin int
 
+// Returns the CanvasSettings
+// @param args int: required by Go's RPC; does nothing
+// @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
+// @return error: Any errors produced
 func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) (err error) {
 	*reply = canvasSettings
+	return nil
+}
+
+// Adds a new shape ot the canvas
+// @param args *blockartlib.AddShapeArgs: contains the shape to be added, and the validateNum
+// @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
+// @return error: Any errors produced
+func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
+	// construct Op for shape
+	op := Op{
+		shape: &args.Shape,
+		shapeHash: "",
+		owner: "", // TODO - generate owner hash
+	}
+	
+	// validate shape
+	// if op is validated, validateOp will put op in currBlock itself and flood the op
+	_, err = validateOp(op)
+	if err != nil {
+		// return error in reply so that it is not cast
+		reply.Error = err
+	}
+
 	return nil
 }
 
@@ -281,96 +309,100 @@ func solveNonce() {
 // - if not validated, returns false and ignores the op.
 // LOCKS: Calls blockLock.Lock()
 // @param op Op: Op to be validated.
-// @return bool: True if op is valid, false otherwise
-func validateOp(op Op) bool {
+// @return valid bool: True if op is valid, false otherwise
+// @return err error: Can return one of the following errors:
+//  	- InsufficientInkError
+// 		- ShapeOverlapError
+// 		- OutOfBoundsError
+func validateOp(op Op) (valid bool, err error) {
 	if op.shape != nil {
-		if !validateShape(op.shape) {
-			// shape is not valid
-			return false
+		if e := validateShape(op.shape); e != nil {
+			return false, e
 		}
 	}
 
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
-	if isMyOp(op) && op.shape != nil {
+	if op.shape != nil {
 		// check if miner has enough ink only if op is owned by this miner
 		// and if shape is not being deleted
 		ink, err := blockartlib.InkUsed(op.shape)
-		if err != nil || countInk() < ink {
+		inkAvail := inkAvail(op.owner, currBlock)
+		if err != nil || inkAvail < ink {
 			// not enough ink
-			return false
+			return false, blockartlib.InsufficientInkError(inkAvail)
 		}
 	}
 
-	if op.shape != nil && shapeIntersects(op.shape) {
-		// op is adding a shape that intersects with an already present shape; reject
-		return false
+	if op.shape != nil {
+		if hash := shapeOverlaps(op.shape, currBlock); hash != "" {
+			// op is adding a shape that intersects with an already present shape; reject
+			return false, blockartlib.ShapeOverlapError(hash)
+		}
 	}
 
-	if op.shape == nil && !shapeExists(op.shapeHash) {
+	if op.shape == nil && !shapeExists(op.shapeHash, currBlock) {
 		// Op is trying to delete a shape that has been deleted
-		return false
+		return false, nil
 	}
 
 	// op is valid; add op to currBlock
 	currBlock.ops = append(currBlock.ops, op)
 	// floodOp on a separate thread; this miner's operation doesn't depend on the flood
 	go floodOp(op)
-	return true
-}
-
-// TODO
-// - checks op's hash and miner's public/private key to decide if 
-//   op belongs to this miner
-// @param op Op: Op to be checked
-// @return isMine bool: true if op belongs to this miner, false otherwise
-func isMyOp(op Op) (isMyOp bool) {
-	// should use op.owner
-	return false
+	return true, nil
 }
 
 // TODO
 // Checks if the passed shape is valid according to the spec
+// Returned error is nil if shape is valid; otherwise, check the error
 // - TODO shape fill spec re. convex or self-intersections
 // - shape points are within the canvas
 // @param shape *blockartlib.Shape: pointer to shape that will be validated
-// @return valid bool: true if shape is valid, false otherwise 
-func validateShape(shape *blockartlib.Shape) (valid bool) {
+// @return err error: Error indicating if shape is valid. Can be nil or one 
+//                    of the following errors:
+// 						- OutOfBoundsError
+func validateShape(shape *blockartlib.Shape) (err error) {
 	// TODO
-	return false
+	return nil
 }
 
 // TODO
 // - checks if the passed shape intersects with any shape currently on the canvas
-//   that is NOT owned by this miner
-// - ASSUMES that the blockLock has already been aquired
+//   that is NOT owned by this miner, starting at headBlock
+// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
 // @param shape *blockartlib.Shape: pointer to shape that will be checked for 
 //                                  intersections
-// @return shapeIntersects bool: true if shape does intersect with a shape 
-//                               currently on the canvas, false otherwise
-func shapeIntersects(shape *blockartlib.Shape) (shapeIntersects bool) {
+// @param headBlock *Block: head block of chain from which ink will be calculated
+// @return shapeOverlapHash string: empty if shape does intersect with any other
+//                                  non-owned shape; otherwise it is the hash of 
+//                                  the shape this shape overlaps
+func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash string) {
 	// TODO
-	return false
+	return ""
 }
 
 // TODO
 // - checks if a shape with the given hash exists on the canvas (and was not 
-//   later deleted)
-// - ASSUMES that the blockLock has already been aquired
+//   later deleted) starting at headBlock
+// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
 // @param shapeHash string: hash of shape to check
+// @param headBlock *Block: head block of chain from which ink will be calculated
 // @return shapeExists bool: true if shape does exist on the canvas, 
 //                           false otherwise
-func shapeExists(shapeHash string) (shapeExists bool) {
+func shapeExists(shapeHash string, headBlock *Block) (shapeExists bool) {
 	// TODO
 	return false
 }
 
 // TODO
-// - counts the amount of ink currently available
-// - ASSUMES that the blockLock has already been aquired
+// - counts the amount of ink currently available to passed miner starting at headBlock
+// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
+// @param owner string: string identfying miner
+// @param headBlock *Block: head block of chain from which ink will be calculated
 // @return ink int: ink currently available to this miner, in pixels
-func countInk() (ink int) {
+func inkAvail(miner string, headBlock *Block) (ink int) {
 	// TODO
 	// Depends on starting ink, and how much ink you receive for each new block
 	return 0

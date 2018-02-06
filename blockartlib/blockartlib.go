@@ -203,12 +203,38 @@ type CanvasT struct {
 	minerAddr string
 	privKey ecdsa.PrivateKey
 	client *rpc.Client
-
 }
 
 func (canvas *CanvasT) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
+	// convert parameters to internal shape representation
+	shape, e := convertShape(shapeType, shapeSvgString, fill, stroke)
+	if e != nil {
+		// TODO - deal with any errors convertShape may produce
+		return shapeHash, blockHash, inkRemaining, e
+	}
+
+	args := &AddShapeArgs{
+		Shape: shape,
+		ValidateNum: validateNum}
+	var reply AddShapeReply
+	e = canvas.client.Call("LimMin.AddShape", args, &reply)
+	if reply.Error != nil {
+		return shapeHash, blockHash, inkRemaining, reply.Error
+	} else if e != nil {
+		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+	
+	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
+}
+
+// TODO - merge conflict @Wesley @Justin
+// 	      I assume you've already written this function; please delete it and fix places that call this function
+// Can return the following errors:
+// - InvalidShapeSvgStringError
+// - ShapeSvgStringTooLongError
+func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shape Shape, err error) {
 	// TODO
-	return "", "", 0, nil
+	return shape, nil
 }
 
 func (canvas *CanvasT) GetSvgString(shapeHash string) (svgString string, err error) {
