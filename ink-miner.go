@@ -263,7 +263,7 @@ func solveNonce() {
 // @return bool: True if op is valid, false otherwise
 func validateOp(op Op) bool {
 	if op.shape != nil {
-		if !validateShape(shape *blockartlib.Shape) {
+		if !validateShape(op.shape) {
 			// shape is not valid
 			return false
 		}
