@@ -490,10 +490,9 @@ func InkUsed(shape *Shape) (ink int, err error) {
 	ink += int(math.Floor(edgeLength))
 	if shape.filledIn {
 		// if shape has non-transparent ink, need to find the area of it
-		// meaning first we have to find if the shape produced by the edges is closed
-		// todo: https://piazza.com/class/jbyh5bsk4ez3cn?cid=348 done with the assumption
-		// the vote for "Simple, closed curve" will win.
-		// do this after the vote is completed and the criteria confirmed
+		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
+		// with no self-intersecting lines. So we can assume this will always be the case.
+		ink += getAreaOfShape(shape)
 	}
 	return ink, nil
 }
@@ -611,14 +610,44 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 }
 
 func pointsAreOnOrigin(A Point, B Point) bool {
-	return A.x * B.y - B.x * A.y == 0
+	return getCrossProduct(A, B) == 0
 }
 
-func getLengthOfEdge(edge Edge) (length float64) {
+func getCrossProduct(A Point, B Point) int {
+	return A.x * B.y - B.x * A.y
+}
+
+func getLengthOfEdge(edge Edge) float64 {
 	// a^2 + b^2 = c^2
 	// a = horizontal length, b = vertical length
 	a2b2 := math.Pow(float64((edge.startPoint.x - edge.endPoint.x)), 2) +
 		math.Pow(float64((edge.startPoint.y - edge.endPoint.y)), 2)
 	c := math.Sqrt(a2b2)
 	return c
+}
+
+func getAreaOfShape(shape *Shape) int {
+	var start Edge = shape.edges[0]
+	var area int = getCrossProduct(start.startPoint, start.endPoint)
+	var current Edge = findNextEdge(shape, start)
+
+	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
+	for ; current.startPoint.x != start.startPoint.x && current.startPoint.y != start.startPoint.y ; {
+		area += getCrossProduct(current.startPoint, current.endPoint)
+		current = findNextEdge(shape, current)
+	}
+
+	return int(math.Abs(float64(area)/2))
+}
+
+func findNextEdge(shape *Shape, edge Edge) Edge {
+	var ret Edge
+	for i := 0; i < len(shape.edges); i++ {
+		if shape.edges[i].startPoint.x == edge.endPoint.x &&
+			shape.edges[i].startPoint.y == edge.endPoint.y {
+			ret = shape.edges[i]
+			break
+		}
+	}
+	return ret
 }
