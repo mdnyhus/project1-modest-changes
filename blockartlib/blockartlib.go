@@ -203,6 +203,7 @@ type CanvasT struct {
 	minerAddr string
 	privKey ecdsa.PrivateKey
 	client *rpc.Client
+	settings CanvasSettings
 }
 
 func (canvas *CanvasT) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
@@ -304,6 +305,8 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	if err = canvasT.client.Call("LimMin.GetCanvasSettings", 0, &setting); err != nil {
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
+
+	canvasT.settings = setting
 
 	return canvasT, setting, nil
 }
