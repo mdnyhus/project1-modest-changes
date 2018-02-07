@@ -10,6 +10,8 @@ package blockartlib
 import "crypto/ecdsa"
 import (
 	"fmt"
+	"sync"
+	"net/rpc"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -196,6 +198,86 @@ type Canvas interface {
 	CloseCanvas() (inkRemaining uint32, err error)
 }
 
+// Canvas type that implements the Canvas interface
+type CanvasT struct {
+	minerAddr string
+	privKey ecdsa.PrivateKey
+	client *rpc.Client
+	settings CanvasSettings
+}
+
+func (canvas *CanvasT) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
+	// convert parameters to internal shape representation
+	shape, e := convertShape(shapeType, shapeSvgString, fill, stroke)
+	if e != nil {
+		// TODO - deal with any errors convertShape may produce
+		return shapeHash, blockHash, inkRemaining, e
+	}
+
+	args := &AddShapeArgs{
+		Shape: shape,
+		ValidateNum: validateNum}
+	var reply AddShapeReply
+	e = canvas.client.Call("LimMin.AddShape", args, &reply)
+	if reply.Error != nil {
+		return shapeHash, blockHash, inkRemaining, reply.Error
+	} else if e != nil {
+		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+	
+	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
+}
+
+// TODO - merge conflict @Wesley @Justin
+// 	      I assume you've already written this function; please delete it and fix places that call this function
+// Can return the following errors:
+// - InvalidShapeSvgStringError
+// - ShapeSvgStringTooLongError
+func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shape Shape, err error) {
+	// TODO
+	return shape, nil
+}
+
+func (canvas *CanvasT) GetSvgString(shapeHash string) (svgString string, err error) {
+	// TODO
+	return "", nil
+}
+
+func (canvas *CanvasT) GetInk() (inkRemaining uint32, err error) {
+	// TODO
+	return 0, nil
+}
+
+func (canvas *CanvasT) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
+	// TODO
+	return 0, nil
+}
+
+func (canvas *CanvasT) GetShapes(blockHash string) (shapeHashes []string, err error) {
+	// TODO
+	return nil, nil
+}
+
+func (canvas *CanvasT) GetGenesisBlock() (blockHash string, err error) {
+	// TODO
+	return "", nil
+}
+
+func (canvas *CanvasT) GetChildren(blockHash string) (blockHashes []string, err error) {
+	// TODO
+	return nil, nil
+}
+
+func (canvas *CanvasT) CloseCanvas() (inkRemaining uint32, err error) {
+	// TODO
+	return 0, nil
+}
+
+// OpenCanvas returns a singleton Canvas
+// Idea for singleton implementation based off https://stackoverflow.com/questions/1823286/singleton-in-go
+var canvasT *CanvasT
+var once sync.Once
+
 // The constructor for a new Canvas object instance. Takes the miner's
 // IP:port address string and a public-private key pair (ecdsa private
 // key type contains the public key). Returns a Canvas instance that
@@ -207,9 +289,26 @@ type Canvas interface {
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	// TODO
-	// For now return DisconnectedError
-	return nil, CanvasSettings{}, DisconnectedError("")
+	// make thread-safe singleton intialization
+	once.Do(func() {
+		canvasT = &CanvasT{}
+	})
+
+	canvasT.minerAddr = minerAddr
+	canvasT.privKey = privKey
+
+	// connect to miner
+	if canvasT.client, err = rpc.Dial("tcp", minerAddr); err != nil {
+		return canvasT, setting, DisconnectedError(minerAddr)
+	}
+
+	if err = canvasT.client.Call("LimMin.GetCanvasSettings", 0, &setting); err != nil {
+		return canvasT, setting, DisconnectedError(minerAddr)
+	}
+
+	canvasT.settings = setting
+
+	return canvasT, setting, nil
 }
 
 // TODO
@@ -223,3 +322,4 @@ func InkUsed(shape *Shape) (ink int, err error) {
 
 	return ink, nil
 }
+
