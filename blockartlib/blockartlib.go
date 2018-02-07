@@ -505,7 +505,7 @@ func InkUsed(shape *Shape) (ink int, err error) {
 4. If not, then you can conclude that the two polygons are completely outside each other.
 */
 
-func ShapesIntersect (A Shape, B Shape) bool {
+func ShapesIntersect (A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	//1
 	for i := 0; i < len(A.edges); i++ {
 		for j := 0; j < len(B.edges); j++ {
@@ -516,12 +516,12 @@ func ShapesIntersect (A Shape, B Shape) bool {
 	}
 	//2
 	pointA := A.edges[0].startPoint
-	if pointInShape(pointA, B) {
+	if pointInShape(pointA, B, canvasSettings) {
 		return true
 	}
 	//3
 	pointB := B.edges[0].startPoint
-	if pointInShape(pointB, A) {
+	if pointInShape(pointB, A, canvasSettings) {
 		return true
 	}
 	//4
@@ -595,11 +595,19 @@ func boxesIntersect(A Box, B Box) bool {
 }
 
 // https://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
-func pointInShape(point Point, shape Shape) bool {
+func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	//var extendX int = 100000 //todo: replace this number with what the canvas bound is, I can't find it at this moment
 	//var edge Edge = Edge{startPoint:point, endPoint:Point{x:point.x + 1000000, y: point.y}}
-
-	return false
+	var extendedX int = int(settings.CanvasXMax)
+	var edge Edge = Edge{startPoint:point, endPoint:Point{x:extendedX, y:point.y}}
+	// if this edge passes through an odd number of edges, the point is in shape
+	intersects := 0
+	for i := 0; i < len(shape.edges); i++ {
+		if EdgesIntersect(edge, shape.edges[i]) {
+			intersects++
+		}
+	}
+	return intersects % 2 == 1
 }
 
 func pointsAreOnOrigin(A Point, B Point) bool {
