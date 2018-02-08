@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"strconv"
 	"unicode"
+	"strings"
 )
 
 type CanvasInstance struct{
@@ -29,7 +30,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 	}
 
 	args := &AddShapeArgs{
-		Shape: shape,
+		Shape: *shape,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
 	e = canvas.client.Call("LimMin.AddShape", args, &reply)
@@ -70,15 +71,20 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error){
 }
 
 // private methods
-func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (Shape, error){
-	var shape Shape
+func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (*Shape, error){
+	var shape *Shape
 	var err error
 	if shapeType == PATH {
-		shape , err = SvgToShape(shapeSvgString)
-		if err != nil{
-			return shape , InvalidShapeSvgStringError("svg string is invalid")
+		*shape , err = SvgToShape(shapeSvgString)
+		if err != nil {
+			return nil , err
 		}
 	}
+	shape.svg = shapeSvgString
+	shape.filledIn = strings.ToLower(fill) != "transparent"
+	shape.filledInColor = fill
+	shape.borderColor = stroke
+	shape.hash = hashShape(*shape)
 	return shape , nil
 }
 
@@ -106,21 +112,12 @@ func SvgToShape(svgString string) (Shape, error) {
 	if checkSvgStringlen(svgString){
 		return Shape{}, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
-
-	// getting the d-paths , include fill and other properties
-	re, err  := regexp.Compile(" d=\".*\"\\/>")
-	checkErr("RegExp error in SvgToShape", err)
-	matches := re.FindAllString(svgString , -1)
-	if matches != nil {
-		path := getDPoints(matches[0])
-		shape, err := parseSvgPath(path)
-		shape.svg = svgString
-		shape.filledIn = checkIsFilled(matches[0])
-		shape.hash = hashShape(shape)
-		fmt.Println(shape)
-		return shape , err
+	shape, err := parseSvgPath(svgString)
+	if err != nil {
+		return Shape{}, err
 	}
-	return Shape{}, InvalidShapeSvgStringError("not a valid shape")
+	fmt.Println(shape)
+	return shape , err
 }
 
 /*

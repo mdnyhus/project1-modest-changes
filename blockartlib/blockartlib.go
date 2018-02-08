@@ -71,7 +71,9 @@ type Shape struct {
 	svg string
 	edges []Edge
 	filledIn bool
-	ink int
+	filledInColor string //todo: hex?
+	borderColor string //todo: hex?
+	ink int //todo: are there different ink levels for different colors?
 	closedWithZ bool
 }
 
