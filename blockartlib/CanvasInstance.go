@@ -82,8 +82,11 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	return shape , nil
 }
 
-func checkErr(err error){
+
+
+func checkErr(context string, err error){
 	if err != nil {
+		fmt.Println(context)
 		panic(err)
 	}
 }
@@ -106,7 +109,7 @@ func SvgToShape(svgString string) (Shape, error) {
 
 	// getting the d-paths , include fill and other properties
 	re, err  := regexp.Compile(" d=\".*\"\\/>")
-	checkErr(err)
+	checkErr("RegExp error in SvgToShape", err)
 	matches := re.FindAllString(svgString , -1)
 	if matches != nil {
 		path := getDPoints(matches[0])
@@ -147,12 +150,12 @@ func SvgIsInCanvas(shape Shape, settings CanvasSettings) bool {
 
 func checkIsFilled(path string) bool {
 	re , err := regexp.Compile("fill=\".*\"")
-	checkErr(err)
+	checkErr("RegExp error in checkIsFilled", err)
 	// checking for fill
 	matches := re.FindAllString(path, -1)
 	if matches != nil {
 		isTransparent , err := regexp.MatchString("\"transparent\"", matches[0])
-		checkErr(err)
+		checkErr("MatchString error in checkIsFilled", err)
 		return !isTransparent
 	}
 	return false
@@ -168,7 +171,7 @@ func hashShape(shape Shape) string {
 // only return the first d path and just the contents within the quotation marks
 func getDPoints(svgPath string) string {
 	re, err  := regexp.Compile("d=\".*?\"")
-	checkErr(err)
+	checkErr("RegExp error in getDPoints", err)
 	matches := re.FindAllString(svgPath , 1)
 	if matches != nil {
 		return matches[0]
@@ -211,19 +214,18 @@ func parseSvgPath(path string) (Shape, error) {
 				letter := path[i]
 				rLetter := rune(letter)
 				if unicode.IsNumber(rLetter) {
-					if onFirstNum == false {
+					if !onFirstNum {
 						onFirstNum = true
-					}
-					if onSecondNum == false {
+					} else if !onSecondNum {
 						onSecondNum = true
 					}
-					if finishedSecondNumber == true {
+					if finishedSecondNumber {
 						fmt.Println("errored")
 						return Shape{}, InvalidShapeSvgStringError("can not have more than three numbers behind M")
 					}
 
 					num, err := strconv.Atoi(string(rLetter))
-					checkErr(err)
+					checkErr("Couldn't convert string to integer", err)
 					if !finishedFirstNumber {
 						xPoint = xPoint*10 + num
 					} else {
@@ -231,10 +233,10 @@ func parseSvgPath(path string) (Shape, error) {
 					}
 				}
 				if unicode.IsSpace(rLetter) {
-					if finishedFirstNumber == false && onFirstNum == true {
+					if !finishedFirstNumber  && onFirstNum {
 						// finished first number
 						finishedFirstNumber = true
-					} else if finishedSecondNumber == false && onSecondNum == true {
+					} else if !finishedSecondNumber && onSecondNum {
 						finishedSecondNumber = true
 					}
 				}
@@ -280,7 +282,7 @@ func parseSvgPath(path string) (Shape, error) {
 				rLetter := rune(letter)
 				if unicode.IsNumber(rLetter) {
 					num, err := strconv.Atoi(string(rLetter))
-					checkErr(err)
+					checkErr("Couldn't convert string to integer", err)
 					value = value*10 + num
 				}
 				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
