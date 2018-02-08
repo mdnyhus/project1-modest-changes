@@ -76,7 +76,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	if shapeType == PATH {
 		shape , err = SvgToShape(shapeSvgString)
 		if err != nil{
-			return shape , InvalidShapeSvgStringError("svg string is invalid")
+			return shape , err
 		}
 	}
 	return shape , nil
