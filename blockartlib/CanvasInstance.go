@@ -38,7 +38,6 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 	} else if e != nil {
 		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
-
 	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
 }
 
@@ -72,10 +71,16 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error){
 
 // private methods
 func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (Shape, error){
-	return Shape{} , nil
+	var shape Shape
+	var err error
+	if shapeType == PATH {
+		shape , err = SvgToShape(shapeSvgString)
+		if err != nil{
+			return shape , InvalidShapeSvgStringError("svg string is invalid")
+		}
+	}
+	return shape , nil
 }
-
-
 
 func checkErr(err error){
 	if err != nil {
@@ -505,4 +510,3 @@ func findNextEdge(shape *Shape, edge Edge) Edge {
 	}
 	return ret
 }
-
