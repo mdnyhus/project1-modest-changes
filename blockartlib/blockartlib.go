@@ -319,6 +319,7 @@ func getDPoints(svgPath string) string {
 }
 
 // TODO: what should we error out, svg paths are someone error prone
+// TODO: deal with negative numbers
 //  - there can be many edge cases where an svg can be technically rendered
 func parseSvgPath(path string) (Shape, error) {
 	fmt.Println(path)
