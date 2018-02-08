@@ -491,10 +491,9 @@ func InkUsed(shape *Shape) (ink int, err error) {
 	ink += int(math.Floor(edgeLength))
 	if shape.filledIn {
 		// if shape has non-transparent ink, need to find the area of it
-		// meaning first we have to find if the shape produced by the edges is closed
-		// todo: https://piazza.com/class/jbyh5bsk4ez3cn?cid=348 done with the assumption
-		// the vote for "Simple, closed curve" will win.
-		// do this after the vote is completed and the criteria confirmed
+		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
+		// with no self-intersecting lines. So we can assume this will always be the case.
+		ink += getAreaOfShape(shape)
 	}
 	return ink, nil
 }
@@ -506,7 +505,7 @@ func InkUsed(shape *Shape) (ink int, err error) {
 4. If not, then you can conclude that the two polygons are completely outside each other.
 */
 
-func ShapesIntersect (A Shape, B Shape) bool {
+func ShapesIntersect (A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	//1
 	for i := 0; i < len(A.edges); i++ {
 		for j := 0; j < len(B.edges); j++ {
@@ -517,12 +516,12 @@ func ShapesIntersect (A Shape, B Shape) bool {
 	}
 	//2
 	pointA := A.edges[0].startPoint
-	if pointInShape(pointA, B) {
+	if pointInShape(pointA, B, canvasSettings) {
 		return true
 	}
 	//3
 	pointB := B.edges[0].startPoint
-	if pointInShape(pointB, A) {
+	if pointInShape(pointB, A, canvasSettings) {
 		return true
 	}
 	//4
@@ -532,32 +531,124 @@ func ShapesIntersect (A Shape, B Shape) bool {
 // https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
 func EdgesIntersect(A Edge, B Edge) bool {
 	// 1: Do bounding boxes of each edge intersect?
-	if !(A.startPoint.x <= B.endPoint.x &&
-		A.endPoint.x >= B.startPoint.x &&
-		A.startPoint.y <= B.endPoint.y &&
-		A.endPoint.y >= B.startPoint.y) {
-			return false
+
+	var boxA Box = buildBoundingBox(A)
+	var boxB Box = buildBoundingBox(B)
+
+	if !boxesIntersect(boxA, boxB) {
+		return false
 	}
+
 	// 2: Does edge A intersect with edge segment B?
+	// 2a: Check if the start or end point of B is on line A - this is for parallel lines
+	var edgeA Edge = Edge{startPoint:Point{x:0, y:0},
+		endPoint:Point{x:A.endPoint.x - A.startPoint.x, y:A.endPoint.y - A.startPoint.y}}
+	var pointB1 Point = Point{x: B.startPoint.x - A.startPoint.x, y:B.startPoint.y - A.startPoint.y}
+	var pointB2 Point = Point{x: B.endPoint.x - A.startPoint.x, y: B.endPoint.y - A.startPoint.y}
+	if pointsAreOnOrigin(edgeA.endPoint, pointB1) || pointsAreOnOrigin(edgeA.endPoint, pointB2) {
+		return true
+	}
+	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
+	// if they are, the lines intersect
 	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
-	//Ax :=
-
-	// 3: Does edge B intersect with edge segment A?
-	return false
+	pointB1 = B.startPoint
+	pointB2 = B.endPoint
+	crossProduct1 := (A.endPoint.x - A.startPoint.x) * (pointB1.y - A.endPoint.y) -
+		(A.endPoint.y - A.startPoint.y) * (pointB1.x - A.endPoint.x)
+	crossProduct2 := (A.endPoint.x - A.startPoint.x) * (pointB2.y - A.endPoint.y) -
+		(A.endPoint.y - A.startPoint.y) * (pointB2.x - A.endPoint.x)
+	// if intersect, the signs of these cross products will be different
+	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
 }
 
-
-
-// https://en.wikipedia.org/wiki/Point_in_polygon
-func pointInShape(point Point, shape Shape) bool {
-	return false
+type Box struct {
+	MinX int
+	MinY int
+	MaxX int
+	MaxY int
 }
 
-func getLengthOfEdge(edge Edge) (length float64) {
+func buildBoundingBox(A Edge) Box {
+	var boxA Box = Box{}
+	if A.startPoint.x > A.endPoint.x {
+		boxA.MaxX = A.startPoint.x
+		boxA.MinX = A.endPoint.x
+	} else {
+		boxA.MaxX = A.endPoint.x
+		boxA.MinX = A.startPoint.x
+	}
+	if A.startPoint.y > A.endPoint.y {
+		boxA.MaxY = A.startPoint.y
+		boxA.MinY = A.endPoint.y
+	} else {
+		boxA.MaxY = A.endPoint.y
+		boxA.MinY = A.startPoint.y
+	}
+	return boxA
+}
+
+func boxesIntersect(A Box, B Box) bool {
+	return A.MaxX >= B.MinX &&
+		A.MinX <= B.MaxX &&
+			A.MaxY >= B.MinY &&
+				A.MinY <= B.MaxY
+}
+
+// https://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
+func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
+	//var extendX int = 100000 //todo: replace this number with what the canvas bound is, I can't find it at this moment
+	//var edge Edge = Edge{startPoint:point, endPoint:Point{x:point.x + 1000000, y: point.y}}
+	var extendedX int = int(settings.CanvasXMax)
+	var edge Edge = Edge{startPoint:point, endPoint:Point{x:extendedX, y:point.y}}
+	// if this edge passes through an odd number of edges, the point is in shape
+	intersects := 0
+	for i := 0; i < len(shape.edges); i++ {
+		if EdgesIntersect(edge, shape.edges[i]) {
+			intersects++
+		}
+	}
+	return intersects % 2 == 1
+}
+
+func pointsAreOnOrigin(A Point, B Point) bool {
+	return getCrossProduct(A, B) == 0
+}
+
+func getCrossProduct(A Point, B Point) int {
+	return A.x * B.y - B.x * A.y
+}
+
+func getLengthOfEdge(edge Edge) float64 {
 	// a^2 + b^2 = c^2
 	// a = horizontal length, b = vertical length
 	a2b2 := math.Pow(float64((edge.startPoint.x - edge.endPoint.x)), 2) +
 		math.Pow(float64((edge.startPoint.y - edge.endPoint.y)), 2)
 	c := math.Sqrt(a2b2)
 	return c
+}
+
+func getAreaOfShape(shape *Shape) int {
+	var start Edge = shape.edges[0]
+	var area int = getCrossProduct(start.startPoint, start.endPoint)
+	var current Edge = findNextEdge(shape, start)
+
+	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
+	for ; current.startPoint.x != start.startPoint.x && current.startPoint.y != start.startPoint.y ; {
+		area += getCrossProduct(current.startPoint, current.endPoint)
+		current = findNextEdge(shape, current)
+	}
+
+	return int(math.Abs(float64(area)/2))
+}
+
+func findNextEdge(shape *Shape, edge Edge) Edge {
+	var ret Edge
+	for i := 0; i < len(shape.edges); i++ {
+		if shape.edges[i].startPoint.x == edge.endPoint.x &&
+			shape.edges[i].startPoint.y == edge.endPoint.y {
+			ret = shape.edges[i]
+			break
+		}
+	}
+	return ret
 }
