@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"unicode"
 	"strings"
+	"unicode/utf8"
 )
 
 type CanvasInstance struct{
@@ -151,35 +152,11 @@ func svgIsInCanvas(shape Shape) bool {
 	return true
 }
 
-func checkIsFilled(path string) bool {
-	re , err := regexp.Compile("fill=\".*\"")
-	checkErr("RegExp error in checkIsFilled", err)
-	// checking for fill
-	matches := re.FindAllString(path, -1)
-	if matches != nil {
-		isTransparent , err := regexp.MatchString("\"transparent\"", matches[0])
-		checkErr("MatchString error in checkIsFilled", err)
-		return !isTransparent
-	}
-	return false
-}
-
 func hashShape(shape Shape) string {
 	hasher := md5.New()
 	s := fmt.Sprintf("%v", shape)
 	hash := hasher.Sum([]byte(s))
 	return hex.EncodeToString(hash)
-}
-
-// only return the first d path and just the contents within the quotation marks
-func getDPoints(svgPath string) string {
-	re, err  := regexp.Compile("d=\".*?\"")
-	checkErr("RegExp error in getDPoints", err)
-	matches := re.FindAllString(svgPath , 1)
-	if matches != nil {
-		return matches[0]
-	}
-	return ""
 }
 
 // TODO: what should we error out, svg paths are someone error prone
@@ -212,6 +189,7 @@ func parseSvgPath(path string) (Shape, error) {
 			onSecondNum := false
 			finishedFirstNumber := false
 			finishedSecondNumber := false
+			decimalMultiplier := 1
 
 			for i := index + 1; i < len(path); i++ {
 				letter := path[i]
@@ -230,18 +208,36 @@ func parseSvgPath(path string) (Shape, error) {
 					num, err := strconv.Atoi(string(rLetter))
 					checkErr("Couldn't convert string to integer", err)
 					if !finishedFirstNumber {
-						xPoint = xPoint*10 + num
+						if decimalMultiplier == 1 {
+							xPoint = xPoint*10 + num
+						} else {
+							xPoint += num * decimalMultiplier
+							decimalMultiplier /= 10
+						}
 					} else {
-						yPoint = yPoint*10 + num
+						if decimalMultiplier == 1 {
+							yPoint = yPoint*10 + num
+						} else {
+							yPoint += num * decimalMultiplier
+							decimalMultiplier /= 10
+						}
 					}
 				}
 				if unicode.IsSpace(rLetter) {
 					if !finishedFirstNumber  && onFirstNum {
 						// finished first number
 						finishedFirstNumber = true
+						decimalMultiplier = 1
 					} else if !finishedSecondNumber && onSecondNum {
 						finishedSecondNumber = true
+						decimalMultiplier = 1
 					}
+				}
+				if period, _ := utf8.DecodeRuneInString("."); rLetter == period {
+					decimalMultiplier /= 10
+				}
+				if negative, _ := utf8.DecodeRuneInString("-"); rLetter == negative {
+
 				}
 				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
 					//not handing mid value letters
