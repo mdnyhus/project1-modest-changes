@@ -119,6 +119,7 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 	curr := block
 
 	for !isGenesis(*curr) {
+		// TODO: Verify ops.
 		if verifyHash(hashBlock(*curr)) {
 			len++
 			currBlock = getBlock(curr.prev)
