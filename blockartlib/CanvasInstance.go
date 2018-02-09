@@ -121,7 +121,6 @@ func svgToShape(svgString string) (*Shape, error) {
 		return nil , OutOfBoundsError(OutOfBoundsError{})
 	}
 
-
 	fmt.Println(shape)
 	return shape , err
 }

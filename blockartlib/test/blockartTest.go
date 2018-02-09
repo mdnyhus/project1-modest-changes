@@ -6,11 +6,13 @@ import "../../blockartlib"
 func main() {
 	fmt.Println("starting tests...")
 
-	//blockartlib.SvgToShape("<path d=\"M10 10 H 90 V 90 H 10 Z\" fill=\"transparent\" stroke=\"black\"/>")
-	//shape , err := blockartlib.SvgToShape("M 250 50 l 150 300")
+	//shape , err := blockartlib.SvgToShape("M 250.121 50.3122 h -20.123 v -30.323 l 150.12 300.545")
+
 	fmt.Println("Created Shape")
-	//fmt.Println(shape)
-	//panic(err)
+	fmt.Println(shape)
+	if err != nil {
+		panic(err)
+	}
 
 
 	blockartlib.PaintCanvas()
