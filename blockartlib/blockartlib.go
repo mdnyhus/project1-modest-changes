@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"sync"
 	"net/rpc"
+	"os"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -242,4 +243,14 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	canvasT.settings = setting
 
 	return canvasT, setting, nil
+}
+
+//TODO - read block chain and make html file
+func PaintCanvas() {
+	htmlContent := []byte("hello\ngo\n")
+	current, _ := os.Getwd()
+	fileName := current + "/Canvas.html"
+	f, _ := os.Create(fileName)
+	f.Write(htmlContent)
+	f.Sync()
 }

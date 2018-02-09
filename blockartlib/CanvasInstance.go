@@ -75,7 +75,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	var shape *Shape
 	var err error
 	if shapeType == PATH {
-		*shape , err = SvgToShape(shapeSvgString)
+		shape , err = svgToShape(shapeSvgString)
 		if err != nil {
 			return nil , err
 		}
@@ -108,16 +108,22 @@ func checkSvgStringlen(svgString string) bool{
 	- does an svg have one path, if not we can loop through all the matches
 */
 
-func SvgToShape(svgString string) (Shape, error) {
+func svgToShape(svgString string) (*Shape, error) {
 	if checkSvgStringlen(svgString){
-		return Shape{}, ShapeSvgStringTooLongError("Svg string has too many characters")
+		return  nil, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
 	shape, err := parseSvgPath(svgString)
 	if err != nil {
-		return Shape{}, err
+		return nil, err
 	}
+	// check
+	if !svgIsInCanvas(shape){
+		return nil , OutOfBoundsError(OutOfBoundsError{})
+	}
+
+
 	fmt.Println(shape)
-	return shape , err
+	return nil , err
 }
 
 /*
@@ -125,9 +131,9 @@ func SvgToShape(svgString string) (Shape, error) {
 	// Todo
 	// @param: takes a shape assembled from the svg string, and canvas settings
 */
-func SvgIsInCanvas(shape Shape, settings CanvasSettings) bool {
-	canvasXMax := int(settings.CanvasXMax)
-	canvasYMax := int(settings.CanvasYMax)
+func svgIsInCanvas(shape Shape) bool {
+	canvasXMax := int(canvasT.settings.CanvasXMax)
+	canvasYMax := int(canvasT.settings.CanvasYMax)
 	for _ , edge := range shape.edges{
 		if edge.startPoint.x > canvasXMax {
 			return false
