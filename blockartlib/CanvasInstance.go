@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"net/rpc"
 	"math"
-	"regexp"
 	"fmt"
 	"crypto/md5"
 	"encoding/hex"
@@ -118,13 +117,13 @@ func svgToShape(svgString string) (*Shape, error) {
 		return nil, err
 	}
 	// check
-	if !svgIsInCanvas(shape){
+	if !svgIsInCanvas(*shape){
 		return nil , OutOfBoundsError(OutOfBoundsError{})
 	}
 
 
 	fmt.Println(shape)
-	return nil , err
+	return shape , err
 }
 
 /*
@@ -162,7 +161,7 @@ func hashShape(shape Shape) string {
 // TODO: what should we error out, svg paths are someone error prone
 // TODO: deal with negative numbers
 //  - there can be many edge cases where an svg can be technically rendered
-func parseSvgPath(path string) (Shape, error) {
+func parseSvgPath(path string) (*Shape, error) {
 	fmt.Println(path)
 	shape := Shape{}
 	currXPoint := 0
@@ -171,6 +170,9 @@ func parseSvgPath(path string) (Shape, error) {
 
 	originXPoint := 0
 	originYPoint := 0
+
+	period, _ := utf8.DecodeRuneInString(".")
+	negative, _ := utf8.DecodeRuneInString("-")
 
 	for {
 		if index >= len(path) {
@@ -183,13 +185,14 @@ func parseSvgPath(path string) (Shape, error) {
 
 		// 2 Numbers following the keyword case
 		if s == "M" || s == "m" || s == "L" || s == "l"{
-			xPoint := 0
-			yPoint := 0
+			xPoint := 0.0
+			yPoint := 0.0
 			onFirstNum := false
 			onSecondNum := false
 			finishedFirstNumber := false
 			finishedSecondNumber := false
-			decimalMultiplier := 1
+			negativeNum := false
+			decimalMultiplier := 1.0
 
 			for i := index + 1; i < len(path); i++ {
 				letter := path[i]
@@ -201,24 +204,39 @@ func parseSvgPath(path string) (Shape, error) {
 						onSecondNum = true
 					}
 					if finishedSecondNumber {
-						fmt.Println("errored")
-						return Shape{}, InvalidShapeSvgStringError("can not have more than three numbers behind M")
+						return nil, InvalidShapeSvgStringError("can not have more than three numbers behind M")
 					}
 
-					num, err := strconv.Atoi(string(rLetter))
-					checkErr("Couldn't convert string to integer", err)
+					num, err := strconv.ParseFloat(string(rLetter), 64)
+					checkErr("Couldn't convert string to float", err)
 					if !finishedFirstNumber {
-						if decimalMultiplier == 1 {
-							xPoint = xPoint*10 + num
+						if floatEquals(decimalMultiplier, 1.0) {
+							if negativeNum {
+								xPoint = xPoint * 10 - num
+							} else {
+								xPoint = xPoint*10 + num
+							}
 						} else {
-							xPoint += num * decimalMultiplier
+							if negativeNum {
+								xPoint -= num * decimalMultiplier
+							} else {
+								xPoint += num * decimalMultiplier
+							}
 							decimalMultiplier /= 10
 						}
 					} else {
-						if decimalMultiplier == 1 {
-							yPoint = yPoint*10 + num
+						if floatEquals(decimalMultiplier, 1.0)  {
+							if negativeNum {
+								yPoint = yPoint*10 - num
+							} else {
+								yPoint = yPoint*10 + num
+							}
 						} else {
-							yPoint += num * decimalMultiplier
+							if negativeNum {
+								yPoint -= num * decimalMultiplier
+							} else {
+								yPoint += num * decimalMultiplier
+							}
 							decimalMultiplier /= 10
 						}
 					}
@@ -228,18 +246,30 @@ func parseSvgPath(path string) (Shape, error) {
 						// finished first number
 						finishedFirstNumber = true
 						decimalMultiplier = 1
+						negativeNum = false
 					} else if !finishedSecondNumber && onSecondNum {
 						finishedSecondNumber = true
 						decimalMultiplier = 1
+						negativeNum = false
 					}
 				}
-				if period, _ := utf8.DecodeRuneInString("."); rLetter == period {
+				if rLetter == period {
+					if decimalMultiplier < 1 {
+						return nil, InvalidShapeSvgStringError("Can't have more than one decimal point in number")
+					}
 					decimalMultiplier /= 10
 				}
-				if negative, _ := utf8.DecodeRuneInString("-"); rLetter == negative {
-
+				if rLetter == negative {
+					if s != "m" && s != "l" {
+						return nil, InvalidShapeSvgStringError("Can't have negative numbers unless relative pathing")
+					}
+					if negativeNum {
+						return nil, InvalidShapeSvgStringError("Can't have more than one negative sign in number")
+					}
+					negativeNum = true
 				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) &&
+					rLetter != period && rLetter != negative {
 					//not handing mid value letters
 					break
 				}
@@ -250,11 +280,11 @@ func parseSvgPath(path string) (Shape, error) {
 				startPoint := Point{currXPoint, currYPoint}
 				var endPoint Point
 				if s == "L" {
-					endPoint.x = xPoint
-					endPoint.y = yPoint
+					endPoint.x = int(xPoint)
+					endPoint.y = int(yPoint)
 				} else if s == "l" {
-					endPoint.x = currXPoint + xPoint
-					endPoint.y = currYPoint + yPoint
+					endPoint.x = currXPoint + int(xPoint)
+					endPoint.y = currYPoint + int(yPoint)
 				}
 				currXPoint = endPoint.x
 				currYPoint = endPoint.y
@@ -262,11 +292,11 @@ func parseSvgPath(path string) (Shape, error) {
 				shape.edges = append(shape.edges, edge)
 			} else {
 				if s == "M" {
-					currXPoint = xPoint
-					currYPoint = yPoint
+					currXPoint = int(xPoint)
+					currYPoint = int(yPoint)
 				} else if s == "m" {
-					currXPoint = currXPoint + xPoint
-					currYPoint = currYPoint + yPoint
+					currXPoint = currXPoint + int(xPoint)
+					currYPoint = currYPoint + int(yPoint)
 				}
 				originXPoint = currXPoint
 				originYPoint = currYPoint
@@ -275,16 +305,48 @@ func parseSvgPath(path string) (Shape, error) {
 
 		// 1 Numbers following the keyword case
 		if s == "H" || s == "V" || s == "h" || s == "v" {
-			value := 0
+			negativeNum := false
+			decimalMultiplier := 1.0
+
+			value := 0.0
 			for i := index + 1; i < len(path); i++ {
 				letter := path[i]
 				rLetter := rune(letter)
 				if unicode.IsNumber(rLetter) {
-					num, err := strconv.Atoi(string(rLetter))
+					num, err := strconv.ParseFloat(string(rLetter), 64)
 					checkErr("Couldn't convert string to integer", err)
-					value = value*10 + num
+					if floatEquals(decimalMultiplier, 1.0) {
+						if negativeNum {
+							value = value * 10 - num
+						} else {
+							value = value * 10 + num
+						}
+					} else {
+						if negativeNum {
+							value -= num * decimalMultiplier
+						} else {
+							value += num * decimalMultiplier
+						}
+						decimalMultiplier /= 10
+					}
 				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) {
+				if rLetter == negative {
+					if negativeNum {
+						return nil, InvalidShapeSvgStringError("Can't have two negatives")
+					}
+					if s != "h" && s != "v" {
+						return nil, InvalidShapeSvgStringError("Can't use negative numbers in absolute paths")
+					}
+					negativeNum = true
+				}
+				if rLetter == period {
+					if decimalMultiplier < 1 {
+						return nil, InvalidShapeSvgStringError("Can't have two decimals in a number")
+					}
+					decimalMultiplier /= 10
+				}
+				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) &&
+					rLetter != negative && rLetter != period {
 					break
 				}
 				index++
@@ -295,11 +357,11 @@ func parseSvgPath(path string) (Shape, error) {
 				var endPoint Point
 				endPoint.y = currYPoint
 				if s == "H"{
-					endPoint.x = value
-					currXPoint = value
+					endPoint.x = int(value)
+					currXPoint = int(value)
 				} else {
-					endPoint.x = currXPoint + value
-					currXPoint = currXPoint + value
+					endPoint.x = currXPoint + int(value)
+					currXPoint = currXPoint + int(value)
 				}
 				edge := Edge{startPoint, endPoint}
 				shape.edges = append(shape.edges, edge)
@@ -310,11 +372,11 @@ func parseSvgPath(path string) (Shape, error) {
 				var endPoint Point
 				endPoint.x = currXPoint
 				if s == "V"{
-					endPoint.y = value
-					currYPoint = value
+					endPoint.y = int(value)
+					currYPoint = int(value)
 				} else {
-					endPoint.y = currYPoint + value
-					currYPoint = currYPoint + value
+					endPoint.y = currYPoint + int(value)
+					currYPoint = currYPoint + int(value)
 				}
 				edge := Edge{startPoint, endPoint}
 				shape.edges = append(shape.edges, edge)
@@ -331,7 +393,7 @@ func parseSvgPath(path string) (Shape, error) {
 		index++
 	}
 
-	return shape , nil
+	return &shape, nil
 }
 
 // TODO
@@ -510,4 +572,12 @@ func findNextEdge(shape *Shape, edge Edge) Edge {
 		}
 	}
 	return ret
+}
+
+var EPSILON float64 = 0.00000001
+func floatEquals(a, b float64) bool {
+	if ((a - b) < EPSILON && (b - a) < EPSILON) {
+		return true
+	}
+	return false
 }
