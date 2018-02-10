@@ -137,19 +137,6 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 }
 
 /*
-	// TODO: Remove
-	Checking for errors and printing the context
-	@param: string to describe the context of the error
-	@param: err, error that is bubbled up
-*/
-func checkErr(context string, err error) {
-	if err != nil {
-		fmt.Println(context)
-		panic(err)
-	}
-}
-
-/*
 	Checking for errors and printing the context
 	@param: svg path string
 	@returns: true if string is too long, false otherwise
@@ -255,6 +242,7 @@ func ParseSvgPath(path string) (*Shape, error) {
 	currIndex := 0
 	startPoint := Point{0.0, 0.0}
 	currPoint := Point{0.0, 0.0}
+	var parseError error = nil
 	for currIndex < len(args) {
 		arg := args[currIndex]
 		argUpper := strings.ToUpper(arg)
@@ -264,21 +252,28 @@ func ParseSvgPath(path string) (*Shape, error) {
 		}
 		switch argUpper {
 		case "M":
-			handleMCase(&currPoint, &startPoint, args[currIndex+1], args[currIndex+2], arg == argUpper)
+			err := handleMCase(&currPoint, &startPoint, args[currIndex+1], args[currIndex+2], arg == argUpper)
+			parseError = err
 			currIndex += 3
 		case "L":
-			handleLCase(&shape, &currPoint, args[currIndex+1], args[currIndex+2], arg == argUpper)
+			err := handleLCase(&shape, &currPoint, args[currIndex+1], args[currIndex+2], arg == argUpper)
+			parseError = err
 			currIndex += 3
 		case "V":
-			handleVCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
+			err:= handleVCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
+			parseError = err
 			currIndex += 2
 		case "H":
-			handleHCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
+			err := handleHCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
+			parseError = err
 			currIndex += 2
 		case "Z":
 			handleZCase(&shape, &currPoint, &startPoint)
 			currIndex += 1
 		default:
+			return nil, InvalidShapeSvgStringError("not valid string")
+		}
+		if parseError != nil {
 			return nil, InvalidShapeSvgStringError("not valid string")
 		}
 	}
@@ -327,11 +322,15 @@ func getOffsetFromKeyword(keyWord string) int {
 	@param: capital: to signal if capital keyword or not
 
 */
-func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal string, capital bool) {
+func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal string, capital bool) error {
 	valX, err := strconv.ParseFloat(xVal, 64)
-	checkErr("Not a valid float", err)
+	if err != nil {
+		return err
+	}
 	valY, err := strconv.ParseFloat(yVal, 64)
-	checkErr("Not a valid float", err)
+	if err != nil {
+		return err
+	}
 
 	if capital {
 		currentPoint.x = valX
@@ -342,6 +341,7 @@ func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal strin
 	}
 	// new start origin for z close
 	*startPoint = *currentPoint
+	return nil
 }
 
 /*
@@ -354,11 +354,15 @@ func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal strin
 	@param: capital: to signal if capital keyword or not
 
 */
-func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, capital bool) {
+func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, capital bool) error {
 	valX, err := strconv.ParseFloat(xVal, 64)
-	checkErr("Not a valid float", err)
+	if err != nil {
+		return err
+	}
 	valY, err := strconv.ParseFloat(yVal, 64)
-	checkErr("Not a valid float", err)
+	if err != nil {
+		return err
+	}
 
 	var endPoint Point
 	if capital {
@@ -370,6 +374,7 @@ func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, ca
 	edge := Edge{*currentPoint, endPoint}
 	shape.edges = append(shape.edges, edge)
 	*currentPoint = endPoint
+	return nil
 }
 
 /*
@@ -381,9 +386,11 @@ func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, ca
 	@param: capital: to signal if capital keyword or not
 
 */
-func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) {
+func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) error {
 	valY, err := strconv.ParseFloat(yVal, 64)
-	checkErr("Not a valid float", err)
+	if err != nil {
+		return err
+	}
 	var endPoint Point
 
 	if capital {
@@ -394,6 +401,7 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) {
 	edge := Edge{*currentPoint, endPoint}
 	shape.edges = append(shape.edges, edge)
 	*currentPoint = endPoint
+	return nil
 }
 
 /*
@@ -405,9 +413,11 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) {
 	@param: capital: to signal if capital keyword or not
 
 */
-func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) {
+func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) error {
 	valX, err := strconv.ParseFloat(xVal, 64)
-	checkErr("Not a valid float", err)
+	if err != nil {
+		return err
+	}
 	var endPoint Point
 	if capital {
 		endPoint = Point{valX, currentPoint.y}
@@ -417,6 +427,7 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) {
 	edge := Edge{*currentPoint, endPoint}
 	shape.edges = append(shape.edges, edge)
 	*currentPoint = endPoint
+	return nil
 }
 
 /*
