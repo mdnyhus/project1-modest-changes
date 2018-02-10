@@ -26,6 +26,13 @@ const MAX_SVG_LENGTH = 128
 var TwoNumKeyWords = []string{"M", "m", "L", "l"}
 var OneNumKeyWords = []string{"V", "v", "H", "h"}
 
+type Box struct {
+	MinX float64
+	MinY float64
+	MaxX float64
+	MaxY float64
+}
+
 // Public Methods
 func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
 	shape, err := convertShape(shapeType, shapeSvgString, fill, stroke)
@@ -130,6 +137,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 }
 
 /*
+	// TODO: Remove
 	Checking for errors and printing the context
 	@param: string to describe the context of the error
 	@param: err, error that is bubbled up
@@ -147,6 +155,15 @@ func checkErr(context string, err error) {
 	@returns: true if string is too long, false otherwise
 */
 func checkSvgStringLen(svgString string) bool {
+	return len(svgString) > MAX_SVG_LENGTH
+}
+
+/*
+	Checking for errors and printing the context
+	@param: svg path string
+	@returns: true if string is too long, false otherwise
+*/
+func isSvgTooLong(svgString string) bool {
 	return len(svgString) > MAX_SVG_LENGTH
 }
 
@@ -192,20 +209,20 @@ func svgIsInCanvas(shape Shape) bool {
 	canvasXMax := float64(canvasT.settings.CanvasXMax)
 	canvasYMax := float64(canvasT.settings.CanvasYMax)
 	for _, edge := range shape.edges {
-		if edge.startPoint.x < 0 || edge.startPoint.y < 0 || edge.endPoint.x < 0 || edge.endPoint.y < 0 {
+		if edge.start.x < 0 || edge.start.y < 0 || edge.end.x < 0 || edge.end.y < 0 {
 			return false
 		}
 
-		if !floatEquals(edge.startPoint.x, canvasXMax) && edge.startPoint.x > canvasXMax {
+		if !floatEquals(edge.start.x, canvasXMax) && edge.start.x > canvasXMax {
 			return false
 		}
-		if !floatEquals(edge.startPoint.y, canvasYMax) && edge.startPoint.y > canvasYMax {
+		if !floatEquals(edge.start.y, canvasYMax) && edge.start.y > canvasYMax {
 			return false
 		}
-		if !floatEquals(edge.endPoint.x, canvasXMax) && edge.endPoint.x > canvasXMax {
+		if !floatEquals(edge.end.x, canvasXMax) && edge.end.x > canvasXMax {
 			return false
 		}
-		if !floatEquals(edge.endPoint.y, canvasYMax) && edge.endPoint.y > canvasYMax {
+		if !floatEquals(edge.end.y, canvasYMax) && edge.end.y > canvasYMax {
 			return false
 		}
 	}
@@ -276,12 +293,7 @@ func ParseSvgPath(path string) (*Shape, error) {
 	@return: the boolean if you have overflowed
 */
 func hasSufficientArgs(index int, keyword string, length int) bool {
-	offset := 0
-	if containsKeyWord(TwoNumKeyWords, keyword) {
-		offset = 2
-	} else if containsKeyWord(OneNumKeyWords, keyword) {
-		offset = 1
-	}
+	offset := getOffsetFromKeyword(keyword)
 	return (index + offset) < length
 }
 
@@ -291,19 +303,24 @@ func hasSufficientArgs(index int, keyword string, length int) bool {
 	@param: keyword for svg path
 	@return: the boolean if you have overflowed
 */
-func containsKeyWord(listOfValidKeyWords []string, keyWord string) bool {
-	for _, word := range listOfValidKeyWords {
+func getOffsetFromKeyword(keyWord string) int {
+	for _, word := range OneNumKeyWords {
 		if word == keyWord {
-			return true
+			return 1
 		}
 	}
-	return false
+	for _, word := range TwoNumKeyWords {
+		if word == keyWord {
+			return 2
+		}
+	}
+	return 0
 }
 
 /*
 	Handles the M/m case, moves the current location of the pen, as well as creates a new start point
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: startPoint: the origin point (where the pen should go back to with z)
+	@param: start: the origin point (where the pen should go back to with z)
 	@param: xVal: the x value for the svg
 	@param: yVal: the y value for the svg
 	@param: currentIndex: pointer to increment the val to next keyword
@@ -406,7 +423,7 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) {
 	Handles the Z/z case, closes off the shape from the origin point (not case sensitive)
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: startPoint: the origin point (where the pen should go back to with z)
+	@param: start: the origin point (where the pen should go back to with z)
 	@param: currentIndex: pointer to increment the val to next keyword
 */
 
@@ -415,11 +432,10 @@ func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
 	shape.edges = append(shape.edges, edge)
 }
 
-// TODO
 // - calculates the amount of ink required to draw the shape, in pixels
 // @param shape *Shape: pointer to shape whose ink cost will be calculated
 // @return ink int: amount of ink required to draw the shape
-// @return error err: TODO
+// @return error err
 func InkUsed(shape *Shape) (ink int, err error) {
 	var floatInk float64 = 0
 	// get border length of shape - just add all the edges up!
@@ -433,6 +449,7 @@ func InkUsed(shape *Shape) (ink int, err error) {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
+		// TODO: Unless assumption confirmed need to change
 		area, err := getAreaOfShape(shape)
 		if err != nil {
 			floatInk += area
@@ -452,15 +469,15 @@ func InkUsed(shape *Shape) (ink int, err error) {
 func getAreaOfShape(shape *Shape) (float64, error) {
 	// https://www.mathopenref.com/coordpolygonarea.html
 	var start Edge = shape.edges[0]
-	var area float64 = getCrossProduct(start.startPoint, start.endPoint)
+	var area float64 = getCrossProduct(start.start, start.end)
 	current, err := findNextEdge(shape, start)
 	if err != nil {
 		return 0, errors.New("Couldn't find area of an open shape")
 	}
 
 	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
-	for ; current.startPoint.x != start.startPoint.x && current.startPoint.y != start.startPoint.y ; {
-		area += getCrossProduct(current.startPoint, current.endPoint)
+	for ; current.start.x != start.start.x && current.start.y != start.start.y ; {
+		area += getCrossProduct(current.start, current.end)
 		current, err = findNextEdge(shape, *current)
 	}
 
@@ -472,13 +489,7 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 // @param canvasSettings CanvasSettings: Used to pass in the settings to the call to pointInShape
 // @return bool
 func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
-	/*
-		1. First find if there's an intersection between the edges of the two polygons.
-		2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-		3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-		4. If not, then you can conclude that the two polygons are completely outside each other.
-	*/
-	//1
+	//1. First find if there's an intersection between the edges of the two polygons.
 	for i := 0; i < len(A.edges); i++ {
 		for j := 0; j < len(B.edges); j++ {
 			if EdgesIntersect(A.edges[i], B.edges[j]) {
@@ -486,17 +497,17 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 			}
 		}
 	}
-	//2
-	pointA := A.edges[0].startPoint
+	//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+	pointA := A.edges[0].start
 	if pointInShape(pointA, B, canvasSettings) {
 		return true
 	}
-	//3
-	pointB := B.edges[0].startPoint
+	//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+	pointB := B.edges[0].start
 	if pointInShape(pointB, A, canvasSettings) {
 		return true
 	}
-	//4
+	//4. If not, then you can conclude that the two polygons are completely outside each other.
 	return false
 }
 
@@ -507,7 +518,7 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 func EdgesIntersect(A Edge, B Edge) bool {
 	// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
 
-	// 1: Do bounding boxes of each edge intersect?
+	// 1: Check if each edge intersect
 	var boxA Box = buildBoundingBox(A)
 	var boxB Box = buildBoundingBox(B)
 
@@ -515,56 +526,49 @@ func EdgesIntersect(A Edge, B Edge) bool {
 		return false
 	}
 
-	// 2: Does edge A intersect with edge segment B?
+	// 2: Check if edge A intersects with edge segment B
 	// 2a: Check if the start or end point of B is on line A - this is for parallel lines
 	// If cross product between two points is 0, it means the two points are on the same line through origin
 	// meaning it is necessary to translate the edge to the origin, and the points of B accordingly
-	var edgeA Edge = Edge{startPoint: Point{x: 0, y: 0},
-		endPoint: Point{x: A.endPoint.x - A.startPoint.x, y: A.endPoint.y - A.startPoint.y}}
-	var pointB1 Point = Point{x: B.startPoint.x - A.startPoint.x, y: B.startPoint.y - A.startPoint.y}
-	var pointB2 Point = Point{x: B.endPoint.x - A.startPoint.x, y: B.endPoint.y - A.startPoint.y}
-	if pointsAreOnOrigin(edgeA.endPoint, pointB1) || pointsAreOnOrigin(edgeA.endPoint, pointB2) {
+	var edgeA Edge = Edge{start: Point{x: 0, y: 0},
+		end: Point{x: A.end.x - A.start.x, y: A.end.y - A.start.y}}
+	var pointB1 Point = Point{x: B.start.x - A.start.x, y: B.start.y - A.start.y}
+	var pointB2 Point = Point{x: B.end.x - A.start.x, y: B.end.y - A.start.y}
+	if pointsAreOnOrigin(edgeA.end, pointB1) || pointsAreOnOrigin(edgeA.end, pointB2) {
 		return true
 	}
 	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
 	// if they are, the lines intersect
 	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
-	pointB1 = B.startPoint
-	pointB2 = B.endPoint
+	pointB1 = B.start
+	pointB2 = B.end
 	//A.x * B.y - B.x * A.y
-	crossProduct1 := getCrossProduct(Point{x:A.endPoint.x - A.startPoint.x, y:pointB1.x - A.endPoint.x},
-										Point{x:A.endPoint.y - A.startPoint.y, y:pointB1.y - A.endPoint.y})
-	crossProduct2 := getCrossProduct(Point{x:A.endPoint.x - A.startPoint.x, y:pointB2.x - A.endPoint.x},
-										Point{x:A.endPoint.y - A.startPoint.y, y:pointB2.y - A.endPoint.y})
+	crossProduct1 := getCrossProduct(Point{x:A.end.x - A.start.x, y:pointB1.x - A.end.x},
+										Point{x:A.end.y - A.start.y, y:pointB1.y - A.end.y})
+	crossProduct2 := getCrossProduct(Point{x:A.end.x - A.start.x, y:pointB2.x - A.end.x},
+										Point{x:A.end.y - A.start.y, y:pointB2.y - A.end.y})
 	// if intersect, the signs of these cross products will be different
 	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
-}
-
-type Box struct {
-	MinX float64
-	MinY float64
-	MaxX float64
-	MaxY float64
 }
 
 // Builds a bounding box for an edge. Private helper method for EdgesIntersect
 // @param A Edge
 // @return Box
-func buildBoundingBox(A Edge) Box {
+func buildBoundingBox(edge Edge) Box {
 	var boxA Box = Box{}
-	if A.startPoint.x > A.endPoint.x {
-		boxA.MaxX = A.startPoint.x
-		boxA.MinX = A.endPoint.x
+	if edge.start.x > edge.end.x {
+		boxA.MaxX = edge.start.x
+		boxA.MinX = edge.end.x
 	} else {
-		boxA.MaxX = A.endPoint.x
-		boxA.MinX = A.startPoint.x
+		boxA.MaxX = edge.end.x
+		boxA.MinX = edge.start.x
 	}
-	if A.startPoint.y > A.endPoint.y {
-		boxA.MaxY = A.startPoint.y
-		boxA.MinY = A.endPoint.y
+	if edge.start.y > edge.end.y {
+		boxA.MaxY = edge.start.y
+		boxA.MinY = edge.end.y
 	} else {
-		boxA.MaxY = A.endPoint.y
-		boxA.MinY = A.startPoint.y
+		boxA.MaxY = edge.end.y
+		boxA.MinY = edge.start.y
 	}
 	return boxA
 }
@@ -590,18 +594,16 @@ func boxesIntersect(A Box, B Box) bool {
 func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	// https://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
 
-	//var extendX int = 100000 //todo: replace this number with what the canvas bound is, I can't find it at this moment
-	//var edge Edge = Edge{startPoint:point, endPoint:Point{x:point.x + 1000000, y: point.y}}
-	var extendedX float64 = float64(settings.CanvasXMax)
-	var edge Edge = Edge{startPoint: point, endPoint: Point{x: extendedX, y: point.y}}
+	var extendedX = float64(settings.CanvasXMax)
+	var edge = Edge{start: point, end: Point{x: extendedX, y: point.y}}
 	// if this edge passes through an odd number of edges, the point is in shape
-	intersects := 0
-	for i := 0; i < len(shape.edges); i++ {
-		if EdgesIntersect(edge, shape.edges[i]) {
-			intersects++
+	intersections := 0
+	for _, e := range shape.edges {
+		if EdgesIntersect(edge, e) {
+			intersections++
 		}
 	}
-	return intersects % 2 == 1
+	return intersections % 2 == 1
 }
 
 // Checks if the two points are on the origin. Private helper method for EdgesIntersect.
@@ -626,8 +628,8 @@ func getCrossProduct(A Point, B Point) float64 {
 func getLengthOfEdge(edge Edge) float64 {
 	// a^2 + b^2 = c^2
 	// a = horizontal length, b = vertical length
-	a2b2 := math.Pow(float64((edge.startPoint.x-edge.endPoint.x)), 2) +
-		math.Pow(float64((edge.startPoint.y-edge.endPoint.y)), 2)
+	a2b2 := math.Pow(float64((edge.start.x-edge.end.x)), 2) +
+		math.Pow(float64((edge.start.y-edge.end.y)), 2)
 	c := math.Sqrt(a2b2)
 	return c
 }
@@ -640,8 +642,8 @@ func getLengthOfEdge(edge Edge) float64 {
 func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 	var ret *Edge
 	for i := 0; i < len(shape.edges); i++ {
-		if shape.edges[i].startPoint.x == edge.endPoint.x &&
-			shape.edges[i].startPoint.y == edge.endPoint.y {
+		if shape.edges[i].start.x == edge.end.x &&
+			shape.edges[i].start.y == edge.end.y {
 			ret = &shape.edges[i]
 			return ret, nil
 		}

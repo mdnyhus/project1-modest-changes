@@ -65,7 +65,7 @@ type Point struct {
 }
 
 type Edge struct {
-	startPoint, endPoint Point
+	start, end Point
 }
 
 type Shape struct {
