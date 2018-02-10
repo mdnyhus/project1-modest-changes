@@ -639,8 +639,8 @@ func getCrossProduct(A Point, B Point) float64 {
 func getLengthOfEdge(edge Edge) float64 {
 	// a^2 + b^2 = c^2
 	// a = horizontal length, b = vertical length
-	a2b2 := math.Pow(float64((edge.start.x-edge.end.x)), 2) +
-		math.Pow(float64((edge.start.y-edge.end.y)), 2)
+	a2b2 := math.Pow(float64(edge.start.x-edge.end.x), 2) +
+		math.Pow(float64(edge.start.y-edge.end.y), 2)
 	c := math.Sqrt(a2b2)
 	return c
 }
@@ -667,5 +667,5 @@ func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 // @param b float64
 // @return bool
 func floatEquals(a, b float64) bool {
-	return ((a - b) < EPSILON && (b - a) < EPSILON)
+	return (a - b) < EPSILON && (b - a) < EPSILON
 }
