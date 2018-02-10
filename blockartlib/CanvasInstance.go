@@ -130,19 +130,19 @@ func svgToShape(svgString string) (*Shape, error) {
 	@return: boolean if all edges are within the canvas
 */
 func svgIsInCanvas(shape Shape) bool {
-	canvasXMax := int(canvasT.settings.CanvasXMax)
-	canvasYMax := int(canvasT.settings.CanvasYMax)
+	canvasXMax := float64(canvasT.settings.CanvasXMax)
+	canvasYMax := float64(canvasT.settings.CanvasYMax)
 	for _ , edge := range shape.edges{
-		if edge.startPoint.x > canvasXMax {
+		if !floatEquals(edge.startPoint.x, canvasXMax) && edge.startPoint.x > canvasXMax {
 			return false
 		}
-		if edge.startPoint.y > canvasYMax {
+		if !floatEquals(edge.startPoint.y, canvasYMax) && edge.startPoint.y > canvasYMax {
 			return false
 		}
-		if edge.endPoint.x > canvasXMax {
+		if !floatEquals(edge.endPoint.x, canvasXMax) && edge.endPoint.x > canvasXMax {
 			return false
 		}
-		if edge.endPoint.y > canvasYMax {
+		if !floatEquals(edge.endPoint.y, canvasYMax) && edge.endPoint.y > canvasYMax {
 			return false
 		}
 	}
@@ -163,6 +163,7 @@ func hashShape(shape Shape) string {
 
 // TODO: what should we error out, svg paths are someone error prone
 // TODO: deal with negative numbers
+// TODO: Wesley's refactor
 //  - there can be many edge cases where an svg can be technically rendered
 func parseSvgPath(path string) (*Shape, error) {
 	fmt.Println(path)
@@ -475,20 +476,21 @@ func handleMcase(currentPoint Point, xVal float64, yVal float64)(*Point){
 // @return ink int: amount of ink required to draw the shape
 // @return error err: TODO
 func InkUsed(shape *Shape) (ink int, err error) {
-	ink = 0
+	var floatInk float64 = 0
 	// get border length of shape - just add all the edges up!
 	var edgeLength float64 = 0
 	for i := 0; i < len(shape.edges); i++ {
 		edgeLength += getLengthOfEdge(shape.edges[i])
 	}
-	// since int is an int, floor the edge lengths
-	ink += int(math.Floor(edgeLength))
+	// since ink is an int, floor the edge lengths
+	floatInk += math.Floor(edgeLength)
 	if shape.filledIn {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
-		ink += getAreaOfShape(shape)
+		floatInk += getAreaOfShape(shape)
 	}
+	ink = int(floatInk)
 	return ink, nil
 }
 
@@ -565,10 +567,10 @@ func EdgesIntersect(A Edge, B Edge) bool {
 }
 
 type Box struct {
-	MinX int
-	MinY int
-	MaxX int
-	MaxY int
+	MinX float64
+	MinY float64
+	MaxX float64
+	MaxY float64
 }
 
 // Builds a bounding box for an edge. Private helper method for EdgesIntersect
@@ -616,7 +618,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 
 	//var extendX int = 100000 //todo: replace this number with what the canvas bound is, I can't find it at this moment
 	//var edge Edge = Edge{startPoint:point, endPoint:Point{x:point.x + 1000000, y: point.y}}
-	var extendedX int = int(settings.CanvasXMax)
+	var extendedX float64 = float64(settings.CanvasXMax)
 	var edge Edge = Edge{startPoint:point, endPoint:Point{x:extendedX, y:point.y}}
 	// if this edge passes through an odd number of edges, the point is in shape
 	intersects := 0
@@ -640,7 +642,7 @@ func pointsAreOnOrigin(A Point, B Point) bool {
 // @param A Point
 // @param B Point
 // @return int
-func getCrossProduct(A Point, B Point) int {
+func getCrossProduct(A Point, B Point) float64 {
 	return A.x * B.y - B.x * A.y
 }
 
@@ -661,9 +663,9 @@ func getLengthOfEdge(edge Edge) float64 {
 // which means the shape passed in is closed.
 // @param shape *Shape
 // @return int
-func getAreaOfShape(shape *Shape) int {
+func getAreaOfShape(shape *Shape) float64 {
 	var start Edge = shape.edges[0]
-	var area int = getCrossProduct(start.startPoint, start.endPoint)
+	var area float64 = getCrossProduct(start.startPoint, start.endPoint)
 	var current Edge = findNextEdge(shape, start)
 
 	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
@@ -672,7 +674,7 @@ func getAreaOfShape(shape *Shape) int {
 		current = findNextEdge(shape, current)
 	}
 
-	return int(math.Abs(float64(area)/2))
+	return math.Abs(area/2)
 }
 
 // Finds the next edge of the shape given current edge and the list of edges in shape

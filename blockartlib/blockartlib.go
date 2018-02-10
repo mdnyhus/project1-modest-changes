@@ -60,7 +60,7 @@ type MinerNetSettings struct {
 }
 
 type Point struct {
-	x, y int
+	x, y float64
 }
 
 type Edge struct {
