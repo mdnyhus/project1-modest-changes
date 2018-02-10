@@ -109,14 +109,20 @@ func (m *MinMin) NotifyNewOp(op *Op, reply *bool) (err error) {
 // @param reply *bool: Bool indicating success of RPC.
 // @return error: Any errors produced during new block processing.
 func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
+	if b := blockTree[hashBlock(*block)]; b != nil {
+		// We are already aware of this block.
+		return nil
+	}
+
 	*reply = false
 	len := 0
-	currBlock := block
+	curr := block
 
-	for !isGenesis(*currBlock) {
-		if verifyHash(hashBlock(*currBlock)) {
+	for !isGenesis(*curr) {
+		// TODO: Verify ops.
+		if verifyHash(hashBlock(*curr)) {
 			len++
-			currBlock = getBlock(currBlock.prev)
+			currBlock = getBlock(curr.prev)
 			if currBlock == nil {
 				// Could not verify due to missing block in chain.
 				return BlockVerificationError(block.nonce)
@@ -139,6 +145,8 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 	if len > headBlock.len {
 		headBlock = block
 	}
+
+	floodBlock(block)
 
 	return nil
 }
