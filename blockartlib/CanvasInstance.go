@@ -2,13 +2,14 @@ package blockartlib
 
 import (
 	"crypto/ecdsa"
+	"net/rpc"
+	"math"
+	"fmt"
 	"crypto/md5"
 	"encoding/hex"
-	"fmt"
-	"math"
-	"net/rpc"
 	"strconv"
 	"strings"
+	"errors"
 )
 
 type CanvasInstance struct {
@@ -19,59 +20,86 @@ type CanvasInstance struct {
 	settings       CanvasSettings
 }
 
-const (
-	MAX_SVG_LENGTH = 128
-)
+const MAX_SVG_LENGTH = 128
+
 
 var TwoNumKeyWords = []string{"M", "m", "L", "l"}
 var OneNumKeyWords = []string{"V", "v", "H", "h"}
 
 // Public Methods
 func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
-	shape, e := convertShape(shapeType, shapeSvgString, fill, stroke)
-	if e != nil {
+	shape, err := convertShape(shapeType, shapeSvgString, fill, stroke)
+	if err != nil {
 		// TODO - deal with any errors convertShape may produce
-		return shapeHash, blockHash, inkRemaining, e
+		return shapeHash, blockHash, inkRemaining, err
 	}
 
 	args := &AddShapeArgs{
 		Shape:       *shape,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
-	e = canvas.client.Call("LimMin.AddShape", args, &reply)
+	err = canvas.client.Call("LimMin.AddShape", args, &reply)
 	if reply.Error != nil {
 		return shapeHash, blockHash, inkRemaining, reply.Error
-	} else if e != nil {
+	} else if err != nil {
 		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
 }
 
-func (cavas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error) {
-	return "", nil
+// Gets SVG string from the hashed shape
+// @param canvas CanvasInstance
+// @return string, error
+func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error){
+	//TODO
+	return "" , nil
 }
 
-func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
-	return 0, nil
+// Gets ink remaining from canvas
+// @param canvas CanvasInstance
+// @return uint32, error
+func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error){
+	//TODO
+	return  0 , nil
 }
 
+// Deletes shape from canvas and returns the new remaining ink count
+// @param canvas CanvasInstance
+// @return uint8, string
 func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
+	//TODO
 	return 0, nil
 }
 
-func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	return nil, nil
+// Gets the shapes' hashes from a hashed block
+// @param canvas CanvasInstance
+// @return []string, error
+func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error){
+	//TODO
+	return nil ,nil
 }
 
-func (cavas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
+// Gets the hash of the head block of the chain
+// @param canvas CanvasInstance
+// @return string, error
+func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error){
+	//TODO
 	return "", nil
 }
 
-func (cavas CanvasInstance) GetChildren(blockHash string) (blockHashes []string, err error) {
+// Gets children of a block in hashed format
+// @param canvas CanvasInstance
+// @return []string, error
+func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string, err error) {
+	//TODO
 	return nil, nil
 }
 
-func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
+// Close the canvas
+// @param canvas CanvasInstance
+// @return uint32, error
+func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error){
+	//TODO
 	return 0, nil
 }
 
@@ -85,16 +113,17 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
 */
 func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (*Shape, error) {
 	var shape *Shape
-	var err error
 	if shapeType == PATH {
+		var err error
+		shape , err = svgToShape(shapeSvgString)
 		shape, err = svgToShape(shapeSvgString)
 		if err != nil {
 			return nil, err
 		}
 	}
 	shape.svg = shapeSvgString
-	shape.filledIn = strings.ToLower(fill) != "transparent"
-	shape.filledInColor = fill
+	shape.filledIn = strings.ToLower(fill) != TRANSPARENT
+	shape.fillColor = fill
 	shape.borderColor = stroke
 	shape.hash = hashShape(*shape)
 	return shape, nil
@@ -117,7 +146,7 @@ func checkErr(context string, err error) {
 	@param: svg path string
 	@returns: true if string is too long, false otherwise
 */
-func isSvgTooLong(svgString string) bool {
+func checkSvgStringLen(svgString string) bool {
 	return len(svgString) > MAX_SVG_LENGTH
 }
 
@@ -404,10 +433,38 @@ func InkUsed(shape *Shape) (ink int, err error) {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
-		floatInk += getAreaOfShape(shape)
+		area, err := getAreaOfShape(shape)
+		if err != nil {
+			floatInk += area
+		} else {
+			return 0, err
+		}
 	}
 	ink = int(floatInk)
 	return ink, nil
+}
+
+// Gets area of shape by going through the edges until you've reached the beginning edge again.
+// This function is assumed to be called only when calculating ink used for a non-transparent fill shape,
+// which means the shape passed in is closed.
+// @param shape *Shape
+// @return int
+func getAreaOfShape(shape *Shape) (float64, error) {
+	// https://www.mathopenref.com/coordpolygonarea.html
+	var start Edge = shape.edges[0]
+	var area float64 = getCrossProduct(start.startPoint, start.endPoint)
+	current, err := findNextEdge(shape, start)
+	if err != nil {
+		return 0, errors.New("Couldn't find area of an open shape")
+	}
+
+	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
+	for ; current.startPoint.x != start.startPoint.x && current.startPoint.y != start.startPoint.y ; {
+		area += getCrossProduct(current.startPoint, current.endPoint)
+		current, err = findNextEdge(shape, *current)
+	}
+
+	return math.Abs(area/2), nil
 }
 
 // @param A Shape
@@ -474,10 +531,11 @@ func EdgesIntersect(A Edge, B Edge) bool {
 	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
 	pointB1 = B.startPoint
 	pointB2 = B.endPoint
-	crossProduct1 := (A.endPoint.x-A.startPoint.x)*(pointB1.y-A.endPoint.y) -
-		(A.endPoint.y-A.startPoint.y)*(pointB1.x-A.endPoint.x)
-	crossProduct2 := (A.endPoint.x-A.startPoint.x)*(pointB2.y-A.endPoint.y) -
-		(A.endPoint.y-A.startPoint.y)*(pointB2.x-A.endPoint.x)
+	//A.x * B.y - B.x * A.y
+	crossProduct1 := getCrossProduct(Point{x:A.endPoint.x - A.startPoint.x, y:pointB1.x - A.endPoint.x},
+										Point{x:A.endPoint.y - A.startPoint.y, y:pointB1.y - A.endPoint.y})
+	crossProduct2 := getCrossProduct(Point{x:A.endPoint.x - A.startPoint.x, y:pointB2.x - A.endPoint.x},
+										Point{x:A.endPoint.y - A.startPoint.y, y:pointB2.y - A.endPoint.y})
 	// if intersect, the signs of these cross products will be different
 	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
 }
@@ -543,7 +601,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 			intersects++
 		}
 	}
-	return intersects%2 == 1
+	return intersects % 2 == 1
 }
 
 // Checks if the two points are on the origin. Private helper method for EdgesIntersect.
@@ -551,7 +609,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 // @param B Point
 // @return bool
 func pointsAreOnOrigin(A Point, B Point) bool {
-	return getCrossProduct(A, B) == 0
+	return getCrossProduct(A, B) < EPSILON
 }
 
 // Gets cross product of two points
@@ -559,7 +617,7 @@ func pointsAreOnOrigin(A Point, B Point) bool {
 // @param B Point
 // @return int
 func getCrossProduct(A Point, B Point) float64 {
-	return A.x*B.y - B.x*A.y
+	return A.x * B.y - B.x * A.y
 }
 
 // Gets length of an edge
@@ -574,39 +632,21 @@ func getLengthOfEdge(edge Edge) float64 {
 	return c
 }
 
-// Gets area of shape by going through the edges until you've reached the beginning edge again.
-// This function is assumed to be called only when calculating ink used for a non-transparent fill shape,
-// which means the shape passed in is closed.
-// @param shape *Shape
-// @return int
-func getAreaOfShape(shape *Shape) float64 {
-	var start Edge = shape.edges[0]
-	var area float64 = getCrossProduct(start.startPoint, start.endPoint)
-	var current Edge = findNextEdge(shape, start)
-
-	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
-	for current.startPoint.x != start.startPoint.x && current.startPoint.y != start.startPoint.y {
-		area += getCrossProduct(current.startPoint, current.endPoint)
-		current = findNextEdge(shape, current)
-	}
-
-	return math.Abs(area / 2)
-}
 
 // Finds the next edge of the shape given current edge and the list of edges in shape
 // @param shape *Shape
 // @param edge Edge
 // @return Edge
-func findNextEdge(shape *Shape, edge Edge) Edge {
-	var ret Edge
+func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
+	var ret *Edge
 	for i := 0; i < len(shape.edges); i++ {
 		if shape.edges[i].startPoint.x == edge.endPoint.x &&
 			shape.edges[i].startPoint.y == edge.endPoint.y {
-			ret = shape.edges[i]
-			break
+			ret = &shape.edges[i]
+			return ret, nil
 		}
 	}
-	return ret
+	return nil, errors.New("Couldn't find next edge") // todo: find a better error?
 }
 
 // Checks for float equality by checking if the difference between the two floats is small
@@ -614,8 +654,5 @@ func findNextEdge(shape *Shape, edge Edge) Edge {
 // @param b float64
 // @return bool
 func floatEquals(a, b float64) bool {
-	if (a-b) < EPSILON && (b-a) < EPSILON {
-		return true
-	}
-	return false
+	return ((a - b) < EPSILON && (b - a) < EPSILON)
 }
