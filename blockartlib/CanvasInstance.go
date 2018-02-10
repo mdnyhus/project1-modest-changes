@@ -8,9 +8,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"strconv"
-	"unicode"
 	"strings"
-	"unicode/utf8"
 )
 
 type CanvasInstance struct{
@@ -111,7 +109,7 @@ func svgToShape(svgString string) (*Shape, error) {
 	if checkSvgStringlen(svgString){
 		return  nil, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
-	shape, err := parseSvgPath(svgString)
+	shape, err := ParseSvgPath2(svgString)
 	if err != nil {
 		return nil, err
 	}
@@ -161,244 +159,6 @@ func hashShape(shape Shape) string {
 	return hex.EncodeToString(hash)
 }
 
-// TODO: what should we error out, svg paths are someone error prone
-// TODO: deal with negative numbers
-// TODO: Wesley's refactor
-//  - there can be many edge cases where an svg can be technically rendered
-func parseSvgPath(path string) (*Shape, error) {
-	fmt.Println(path)
-	shape := Shape{}
-	currXPoint := 0
-	currYPoint := 0
-	index := 0
-
-	originXPoint := 0
-	originYPoint := 0
-
-	period, _ := utf8.DecodeRuneInString(".")
-	negative, _ := utf8.DecodeRuneInString("-")
-
-	for {
-		if index >= len(path) {
-			break
-		}
-
-		char := path[index]
-		s := string(char)
-		fmt.Println("Position " + strconv.Itoa(index) + " looking at this char '" + s + "'")
-
-		// 2 Numbers following the keyword case
-		if s == "M" || s == "m" || s == "L" || s == "l"{
-			xPoint := 0.0
-			yPoint := 0.0
-			onFirstNum := false
-			onSecondNum := false
-			finishedFirstNumber := false
-			finishedSecondNumber := false
-			negativeNum := false
-			decimalMultiplier := 1.0
-
-			for i := index + 1; i < len(path); i++ {
-				letter := path[i]
-				rLetter := rune(letter)
-				if unicode.IsNumber(rLetter) {
-					if !onFirstNum {
-						onFirstNum = true
-					} else if !onSecondNum {
-						onSecondNum = true
-					}
-					if finishedSecondNumber {
-						return nil, InvalidShapeSvgStringError("can not have more than three numbers behind M")
-					}
-
-					num, err := strconv.ParseFloat(string(rLetter), 64)
-					checkErr("Couldn't convert string to float", err)
-					if !finishedFirstNumber {
-						if floatEquals(decimalMultiplier, 1.0) {
-							if negativeNum {
-								xPoint = xPoint * 10 - num
-							} else {
-								xPoint = xPoint*10 + num
-							}
-						} else {
-							if negativeNum {
-								xPoint -= num * decimalMultiplier
-							} else {
-								xPoint += num * decimalMultiplier
-							}
-							decimalMultiplier /= 10
-						}
-					} else {
-						if floatEquals(decimalMultiplier, 1.0)  {
-							if negativeNum {
-								yPoint = yPoint*10 - num
-							} else {
-								yPoint = yPoint*10 + num
-							}
-						} else {
-							if negativeNum {
-								yPoint -= num * decimalMultiplier
-							} else {
-								yPoint += num * decimalMultiplier
-							}
-							decimalMultiplier /= 10
-						}
-					}
-				}
-				if unicode.IsSpace(rLetter) {
-					if !finishedFirstNumber  && onFirstNum {
-						// finished first number
-						finishedFirstNumber = true
-						decimalMultiplier = 1
-						negativeNum = false
-					} else if !finishedSecondNumber && onSecondNum {
-						finishedSecondNumber = true
-						decimalMultiplier = 1
-						negativeNum = false
-					}
-				}
-				if rLetter == period {
-					if decimalMultiplier < 1 {
-						return nil, InvalidShapeSvgStringError("Can't have more than one decimal point in number")
-					}
-					decimalMultiplier /= 10
-				}
-				if rLetter == negative {
-					if s != "m" && s != "l" {
-						return nil, InvalidShapeSvgStringError("Can't have negative numbers unless relative pathing")
-					}
-					if negativeNum {
-						return nil, InvalidShapeSvgStringError("Can't have more than one negative sign in number")
-					}
-					negativeNum = true
-				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) &&
-					rLetter != period && rLetter != negative {
-					//not handing mid value letters
-					break
-				}
-				index++
-			}
-
-			if s == "L" || s == "l" {
-				startPoint := Point{currXPoint, currYPoint}
-				var endPoint Point
-				if s == "L" {
-					endPoint.x = int(xPoint)
-					endPoint.y = int(yPoint)
-				} else if s == "l" {
-					endPoint.x = currXPoint + int(xPoint)
-					endPoint.y = currYPoint + int(yPoint)
-				}
-				currXPoint = endPoint.x
-				currYPoint = endPoint.y
-				edge := Edge{startPoint, endPoint}
-				shape.edges = append(shape.edges, edge)
-			} else {
-				if s == "M" {
-					currXPoint = int(xPoint)
-					currYPoint = int(yPoint)
-				} else if s == "m" {
-					currXPoint = currXPoint + int(xPoint)
-					currYPoint = currYPoint + int(yPoint)
-				}
-				originXPoint = currXPoint
-				originYPoint = currYPoint
-			}
-		}
-
-		// 1 Numbers following the keyword case
-		if s == "H" || s == "V" || s == "h" || s == "v" {
-			negativeNum := false
-			decimalMultiplier := 1.0
-
-			value := 0.0
-			for i := index + 1; i < len(path); i++ {
-				letter := path[i]
-				rLetter := rune(letter)
-				if unicode.IsNumber(rLetter) {
-					num, err := strconv.ParseFloat(string(rLetter), 64)
-					checkErr("Couldn't convert string to integer", err)
-					if floatEquals(decimalMultiplier, 1.0) {
-						if negativeNum {
-							value = value * 10 - num
-						} else {
-							value = value * 10 + num
-						}
-					} else {
-						if negativeNum {
-							value -= num * decimalMultiplier
-						} else {
-							value += num * decimalMultiplier
-						}
-						decimalMultiplier /= 10
-					}
-				}
-				if rLetter == negative {
-					if negativeNum {
-						return nil, InvalidShapeSvgStringError("Can't have two negatives")
-					}
-					if s != "h" && s != "v" {
-						return nil, InvalidShapeSvgStringError("Can't use negative numbers in absolute paths")
-					}
-					negativeNum = true
-				}
-				if rLetter == period {
-					if decimalMultiplier < 1 {
-						return nil, InvalidShapeSvgStringError("Can't have two decimals in a number")
-					}
-					decimalMultiplier /= 10
-				}
-				if !unicode.IsNumber(rLetter) && !unicode.IsSpace(rLetter) &&
-					rLetter != negative && rLetter != period {
-					break
-				}
-				index++
-			}
-			// assigning it
-			if s == "H" || s == "h" {
-				startPoint := Point{currXPoint, currYPoint}
-				var endPoint Point
-				endPoint.y = currYPoint
-				if s == "H"{
-					endPoint.x = int(value)
-					currXPoint = int(value)
-				} else {
-					endPoint.x = currXPoint + int(value)
-					currXPoint = currXPoint + int(value)
-				}
-				edge := Edge{startPoint, endPoint}
-				shape.edges = append(shape.edges, edge)
-
-			}
-			if s == "V" || s == "v" {
-				startPoint := Point{currXPoint, currYPoint}
-				var endPoint Point
-				endPoint.x = currXPoint
-				if s == "V"{
-					endPoint.y = int(value)
-					currYPoint = int(value)
-				} else {
-					endPoint.y = currYPoint + int(value)
-					currYPoint = currYPoint + int(value)
-				}
-				edge := Edge{startPoint, endPoint}
-				shape.edges = append(shape.edges, edge)
-			}
-		}
-
-		// special case Z
-		if s == "Z" || s == "z" {
-			edge := Edge{startPoint:Point{currXPoint, currYPoint}, endPoint:Point{originXPoint, originYPoint}}
-			shape.edges = append(shape.edges, edge)
-			shape.closedWithZ = true
-		}
-		// else move on
-		index++
-	}
-
-	return &shape, nil
-}
 
 /*
 
@@ -406,42 +166,51 @@ func parseSvgPath(path string) (*Shape, error) {
 
 func ParseSvgPath2(path string )(*Shape, error) {
 	args := strings.Split(path, " ")
-
+	shape := Shape{}
 	currentIndex := 0
-	//currentPoint := Point{0, 0}
+	startPoint := Point{0.0, 0.0}
+	currentPoint := Point{0.0, 0.0}
 	for currentIndex < len(args) {
 		arg := args[currentIndex]
-		fmt.Println("The arguement " + strconv.Itoa(currentIndex) + "is: " + arg)
+		fmt.Println("The arguement " + strconv.Itoa(currentIndex) + " is: " + arg)
 		isValid := checkOverFlow(currentIndex, arg, len(args))
 		if !isValid{
 			return nil , InvalidShapeSvgStringError("not valid string")
 		}
 		switch arg {
 		case "M":
+			handleMCase(&currentPoint, &startPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, true)
 			break
 		case "m":
+			handleMCase(&currentPoint, &startPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, false)
 			break
 		case "L":
+			handleLCase(&shape, &currentPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, true)
 			break
 		case "l":
+			handleLCase(&shape, &currentPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, false)
 			break
 		case "V":
+			handleVCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, true)
 			break
 		case "v":
+			handleVCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, false)
 			break
 		case "H":
+			handleHCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, true)
 			break
 		case "h":
+			handleHCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, false)
 			break
 		case "z":
 		case "Z":
+			handleZCase(&shape, &currentPoint, &startPoint, &currentIndex)
 			break
 		default:
 			return nil , InvalidShapeSvgStringError("not valid string")
 		}
-		currentIndex++
 	}
-	return nil, nil
+	return &shape, nil
 }
 
 var TWONUMKEYWORDS = []string{"M", "m", "L", "l"}
@@ -449,15 +218,15 @@ var ONENUMKEYWORDS = []string{"V", "v", "H", "h"}
 
 func checkOverFlow(index int , keyword string ,  length int) bool {
 	offset := 0
-	if contains(TWONUMKEYWORDS, keyword){
+	if containsKeyWord(TWONUMKEYWORDS, keyword){
 		offset = 2
-	} else if contains(ONENUMKEYWORDS, keyword){
+	} else if containsKeyWord(ONENUMKEYWORDS, keyword){
 		offset = 1
 	}
-	return (index + offset) >= length
+	return (index + offset) < length
 }
 
-func contains(s []string, e string) bool {
+func containsKeyWord(s []string, e string) bool {
 	for _, a := range s {
 		if a == e {
 			return true
@@ -466,8 +235,78 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func handleMcase(currentPoint Point, xVal float64, yVal float64)(*Point){
-	return nil
+func handleMCase(currentPoint *Point,startPoint *Point, xVal string, yVal string, currentIndex *int, capital bool) {
+	valX , err := strconv.ParseFloat(xVal, 64)
+	checkErr("Not a valid float", err)
+	valY , err := strconv.ParseFloat(yVal, 64)
+	checkErr("Not a valid float", err)
+
+	if capital{
+		currentPoint.x = valX
+		currentPoint.y = valY
+	} else {
+		currentPoint.x += valX
+		currentPoint.y += valY
+	}
+	// new start origin for z close
+	*startPoint = *currentPoint
+	*currentIndex += 3
+}
+
+func handleHCase(shape *Shape, currentPoint *Point, xVal string, currentIndex *int, capital bool){
+	valX , err := strconv.ParseFloat(xVal, 64)
+	checkErr("Not a valid float", err)
+	var endPoint Point
+	if capital{
+		endPoint = Point{valX, currentPoint.y}
+	} else {
+		endPoint = Point{currentPoint.x + valX, currentPoint.y}
+	}
+	edge := Edge{*currentPoint,endPoint }
+	shape.edges = append(shape.edges, edge)
+	*currentPoint = endPoint
+	*currentIndex += 2
+}
+
+func handleVCase(shape *Shape, currentPoint *Point, yVal string, currentIndex *int, capital bool) {
+	valY , err := strconv.ParseFloat(yVal, 64)
+	checkErr("Not a valid float", err)
+	var endPoint Point
+
+	if capital {
+		endPoint = Point{currentPoint.x, valY}
+	} else {
+		endPoint = Point{currentPoint.x, currentPoint.y + valY}
+	}
+	edge := Edge{*currentPoint,endPoint }
+	shape.edges = append(shape.edges, edge)
+	*currentPoint = endPoint
+	*currentIndex += 2
+}
+
+func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, currentIndex *int, capital bool) {
+	valX , err := strconv.ParseFloat(xVal, 64)
+	checkErr("Not a valid float", err)
+	valY , err := strconv.ParseFloat(yVal, 64)
+	checkErr("Not a valid float", err)
+
+	var endPoint Point
+	if capital{
+		endPoint = Point{ valX, valY}
+	} else {
+		endPoint = Point{currentPoint.x + valX, currentPoint.y + valY}
+	}
+
+	edge := Edge{*currentPoint,endPoint }
+	shape.edges = append(shape.edges, edge)
+	*currentPoint = endPoint
+	*currentIndex += 3
+}
+
+func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point, currentIndex *int) {
+	edge := Edge{*currentPoint,*startPoint}
+	shape.edges = append(shape.edges, edge)
+	*currentIndex += 1
 }
 
 // TODO
