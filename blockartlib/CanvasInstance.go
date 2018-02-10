@@ -451,8 +451,8 @@ func InkUsed(shape *Shape) (ink int, err error) {
 	var floatInk float64 = 0
 	// get border length of shape - just add all the edges up!
 	var edgeLength float64 = 0
-	for i := 0; i < len(shape.edges); i++ {
-		edgeLength += getLengthOfEdge(shape.edges[i])
+	for _, edge := range shape.edges {
+		edgeLength += getLengthOfEdge(edge)
 	}
 	// since ink is an int, floor the edge lengths
 	floatInk += math.Floor(edgeLength)
@@ -501,9 +501,9 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 // @return bool
 func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	//1. First find if there's an intersection between the edges of the two polygons.
-	for i := 0; i < len(A.edges); i++ {
-		for j := 0; j < len(B.edges); j++ {
-			if EdgesIntersect(A.edges[i], B.edges[j]) {
+	for _, edgeA := range A.edges {
+		for _, edgeB := range B.edges {
+			if EdgesIntersect(edgeA, edgeB) {
 				return true
 			}
 		}
@@ -652,10 +652,10 @@ func getLengthOfEdge(edge Edge) float64 {
 // @return Edge
 func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 	var ret *Edge
-	for i := 0; i < len(shape.edges); i++ {
-		if shape.edges[i].start.x == edge.end.x &&
-			shape.edges[i].start.y == edge.end.y {
-			ret = &shape.edges[i]
+	for _, edge := range shape.edges {
+		if edge.start.x == edge.end.x &&
+			edge.start.y == edge.end.y {
+			ret = &edge
 			return ret, nil
 		}
 	}
