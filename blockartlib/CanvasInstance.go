@@ -156,7 +156,7 @@ func checkSvgStringLen(svgString string) bool {
 	@return: shape that is parsed with the internal struct or error otherwise
 */
 func svgToShape(svgString string) (*Shape, error) {
-	if isSvgTooLong(svgString) {
+	if checkSvgStringLen(svgString) {
 		return nil, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
 	shape, err := ParseSvgPath(svgString)
