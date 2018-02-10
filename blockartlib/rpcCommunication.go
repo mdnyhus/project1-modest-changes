@@ -22,3 +22,44 @@ type AddShapeReply struct {
 	// So, store actual error here; nil indicates no error
 	Error error
 }
+
+type GetSvgStringArgs struct {
+	ShapeHash string
+}
+
+type GetSvgStringReply struct {
+	SvgString string
+
+	// RPC errors are all cast to a ServerError
+	// So, store actual error here; nil indicates no error
+	Error error
+}
+
+type DeleteShapeArgs struct {
+	ValidateNum uint8
+	ShapeHash string
+}
+
+type DeleteShapeReply struct {
+	InkRemaining uint32
+
+	// RPC errors are all cast to a ServerError
+	// So, store actual error here; nil indicates no error
+	Error error
+}
+
+type GetShapesReply {
+	ShapeHashes []string
+
+	// RPC errors are all cast to a ServerError
+	// So, store actual error here; nil indicates no error
+	Error error
+}
+
+type GetChildrenReply {
+	BlockHashes []string
+
+	// RPC errors are all cast to a ServerError
+	// So, store actual error here; nil indicates no error
+	Error error
+}

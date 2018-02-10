@@ -170,7 +170,7 @@ func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) 
 // Adds a new shape ot the canvas
 // @param args *blockartlib.AddShapeArgs: contains the shape to be added, and the validateNum
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
-// @return error: Any errors produced
+// @return err error: Any errors produced
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
 	// construct Op for shape
 	op := Op{
@@ -185,6 +185,92 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 		reply.Error = err
 	}
 
+	// TODO - wait until args.ValidateNum blocks have been added this block before returning
+
+	return nil
+}
+
+// TODO
+// Returns the full SvgString fro the given hash, if it exists on the longest 
+// @param args *blockartlib.GetSvgStringArgs: contains the hash of the shape to be returned
+// @param reply *blockartlib.GetSvgStringReply: contains the shape string, and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockartlib.GetSvgStringReply) (err error) {
+	// TODO - iterate through headBlock searching for the string
+	// For now, just return an InvalidShapeHashError
+	*reply.Error = blockartlib.InvalidShapeHashError(args.ShapeHash)
+	return nil
+}
+
+// TODO
+// Returns the amount of ink remaining for this miner, in pixels
+// @param args args *int: dummy argument that is not used
+// @param reply *uint32: amount of remaining ink, in pixels
+// @param err error: Any errors produced
+func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
+	// TODO - iterate through headBlock to calculate remaining ink
+	*reply = 0
+	return nil
+}
+
+// TODO
+// Deletes the shape associated with the passed shapeHash, if it exists and is owned by this miner.
+// args.ValidateNum specifies the number of blocks (no-op or op) that must follow the block with this 
+// operation in the block-chain along the longest path before the operation can return successfully.
+// @param args *blockartlib.DeleteShapeArgs: contains the ValidateNum and ShapeHash
+// @param reply *blockartlib.DeleteShapeReply: contains the ink remaining, and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
+	// TODO - iterate through headBlock searching for shape, and delete it
+	// Then wait until args.ValidateNum blocks have been added this block before returning
+	// For now, just return a ShapeOwnerError
+	*reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
+	return nil
+}
+
+// TODO
+// Returns the shape hashes contained by the block in BlockHash
+// @param args *string: the blockHash
+// @param reply *blockartlib.GetShapesReply: contains the slice of shape hashes and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err error) {
+	// TODO - search for the block, construct a slice of hashes and return it
+	// For now, just return an InvalidBlockHashError
+	*reply.Error = blockartlib.InvalidBlockHashError(*args)
+	return nil
+}
+
+// TODO
+// Returns the hash of the genesis block of the block chain
+// @param args args *int: dummy argument that is not used
+// @param reply *uint32: hash of genesis block
+// @param err error: Any errors produced
+func (l *LibMin) GetGenesisBlock(args *int, reply *string) (err error) {
+	// TODO
+	*reply = ""
+	return nil
+}
+
+// TODO
+// Returns the shape hashes contained by the block in BlockHash
+// @param args *string: the blockHash
+// @param reply *blockartlib.GetChildrenReply: contains the slice of block hashes and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) GetChildren(args *string, reply *blockartlib.GetChildrenReply) (err error) {
+	// TODO - search for children whose parent is the passed BlockHash
+	// For now, just return an InvalidBlockHashError
+	*reply.Error = blockartlib.InvalidBlockHashError(args.BlockHash)
+	return nil
+}
+
+// TODO
+// Closes the canvas
+// @param args args *int: dummy argument that is not used
+// @param reply *uint32: hash of genesis block
+// @param err error: Any errors produced
+func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
+	// TODO
+	*reply = ""
 	return nil
 }
 
