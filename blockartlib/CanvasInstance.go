@@ -134,14 +134,26 @@ func svgToShape(svgString string) (*Shape, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !svgIsInCanvas(*shape) {
-		return nil, OutOfBoundsError(OutOfBoundsError{})
+	checkErr := CheckShape(*shape)
+	if checkErr != nil{
+		return nil, checkErr
 	}
-
-	fmt.Println(shape)
 	return shape, err
 }
 
+/*  Checking the internal shape struct for the following cases:
+	1. All edges are within the canvas
+	2. TODO: Shapes do self intersect? -> only matters if fill is non transparent
+	@param: shape: Internal shape representation
+	@return: true if shape is valid , false otherwise
+*/
+
+func CheckShape(shape Shape) error{
+	if !svgIsInCanvas(shape) {
+		return OutOfBoundsError{}
+	}
+	return nil
+}
 /*
 	Check if all the edges in the shape are within the campus
 	@param: takes a shape assembled from the svg string, checks the list of edges' absolute points
