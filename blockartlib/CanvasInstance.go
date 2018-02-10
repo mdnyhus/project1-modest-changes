@@ -141,15 +141,6 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	@param: svg path string
 	@returns: true if string is too long, false otherwise
 */
-func checkSvgStringLen(svgString string) bool {
-	return len(svgString) > MAX_SVG_LENGTH
-}
-
-/*
-	Checking for errors and printing the context
-	@param: svg path string
-	@returns: true if string is too long, false otherwise
-*/
 func isSvgTooLong(svgString string) bool {
 	return len(svgString) > MAX_SVG_LENGTH
 }
@@ -160,7 +151,7 @@ func isSvgTooLong(svgString string) bool {
 	@return: shape that is parsed with the internal struct or error otherwise
 */
 func svgToShape(svgString string) (*Shape, error) {
-	if checkSvgStringLen(svgString) {
+	if isSvgTooLong(svgString) {
 		return nil, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
 	shape, err := ParseSvgPath(svgString)
