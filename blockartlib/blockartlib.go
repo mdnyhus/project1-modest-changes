@@ -10,9 +10,9 @@ package blockartlib
 import "crypto/ecdsa"
 import (
 	"fmt"
-	"sync"
 	"net/rpc"
 	"os"
+	"sync"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -20,8 +20,8 @@ type ShapeType int
 
 const (
 	// Path shape.
-	PATH ShapeType = iota
-	EPSILON float64 = 0.000001
+	PATH    ShapeType = iota
+	EPSILON float64   = 0.000001
 	// Circle shape (extra credit).
 	// CIRCLE
 )
@@ -64,18 +64,17 @@ type Point struct {
 }
 
 type Edge struct {
-	startPoint , endPoint Point
+	startPoint, endPoint Point
 }
 
 type Shape struct {
-	hash string
-	svg string
-	edges []Edge
-	filledIn bool
+	hash          string
+	svg           string
+	edges         []Edge
+	filledIn      bool
 	filledInColor string //todo: hex?
-	borderColor string //todo: hex?
-	ink int //todo: are there different ink levels for different colors?
-	closedWithZ bool
+	borderColor   string //todo: hex?
+	ink           int    //todo: are there different ink levels for different colors?
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////

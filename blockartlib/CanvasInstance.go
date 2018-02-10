@@ -2,26 +2,29 @@ package blockartlib
 
 import (
 	"crypto/ecdsa"
-	"net/rpc"
-	"math"
-	"fmt"
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
+	"math"
+	"net/rpc"
 	"strconv"
 	"strings"
 )
 
-type CanvasInstance struct{
+type CanvasInstance struct {
 	canvasSettings CanvasSettings
-	minerAddr string
-	privKey ecdsa.PrivateKey
-	client *rpc.Client
-	settings CanvasSettings
+	minerAddr      string
+	privKey        ecdsa.PrivateKey
+	client         *rpc.Client
+	settings       CanvasSettings
 }
 
 const (
 	MAX_SVG_LENGTH = 128
 )
+
+var TwoNumKeyWords = []string{"M", "m", "L", "l"}
+var OneNumKeyWords = []string{"V", "v", "H", "h"}
 
 // Public Methods
 func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
@@ -32,7 +35,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 	}
 
 	args := &AddShapeArgs{
-		Shape: *shape,
+		Shape:       *shape,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
 	e = canvas.client.Call("LimMin.AddShape", args, &reply)
@@ -44,23 +47,23 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
 }
 
-func (cavas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error){
-	return "" , nil
+func (cavas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error) {
+	return "", nil
 }
 
-func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error){
-	return  0 , nil
+func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
+	return 0, nil
 }
 
 func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
-	return 0 , nil
+	return 0, nil
 }
 
-func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error){
-	return nil ,nil
+func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error) {
+	return nil, nil
 }
 
-func (cavas CanvasInstance) GetGenesisBlock() (blockHash string, err error){
+func (cavas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
 	return "", nil
 }
 
@@ -68,25 +71,25 @@ func (cavas CanvasInstance) GetChildren(blockHash string) (blockHashes []string,
 	return nil, nil
 }
 
-func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error){
+func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
 	return 0, nil
 }
 
 /*
-	Trampoline function to call the parser, adds attributes after it parses
+	Wrapper function to call the parser, adds attributes after it parses
 	@param: shapeType for extra credit
 	@param: shape string for the svg
 	@param: fill to determine if the svg shape needs to calculate area
 	@param: width of the stroke
 	@return: internal shape struct ; error otherwise
 */
-func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (*Shape, error){
+func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (*Shape, error) {
 	var shape *Shape
 	var err error
 	if shapeType == PATH {
-		shape , err = svgToShape(shapeSvgString)
+		shape, err = svgToShape(shapeSvgString)
 		if err != nil {
-			return nil , err
+			return nil, err
 		}
 	}
 	shape.svg = shapeSvgString
@@ -94,7 +97,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	shape.filledInColor = fill
 	shape.borderColor = stroke
 	shape.hash = hashShape(*shape)
-	return shape , nil
+	return shape, nil
 }
 
 /*
@@ -102,7 +105,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	@param: string to describe the context of the error
 	@param: err, error that is bubbled up
 */
-func checkErr(context string, err error){
+func checkErr(context string, err error) {
 	if err != nil {
 		fmt.Println(context)
 		panic(err)
@@ -112,33 +115,31 @@ func checkErr(context string, err error){
 /*
 	Checking for errors and printing the context
 	@param: svg path string
-	@returns: boolean to if string is over
+	@returns: true if string is too long, false otherwise
 */
-func checkSvgStringLen(svgString string) bool {
+func isSvgTooLong(svgString string) bool {
 	return len(svgString) > MAX_SVG_LENGTH
 }
 
-
 /*
-	Trampoline to call parser, error detections
+	Wrapper to call parser, error detections
 	@param: svg string for path
 	@return: shape that is parsed with the internal struct or error otherwise
 */
 func svgToShape(svgString string) (*Shape, error) {
-	if checkSvgStringLen(svgString){
-		return  nil, ShapeSvgStringTooLongError("Svg string has too many characters")
+	if isSvgTooLong(svgString) {
+		return nil, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
-	shape, err := ParseSvgPath2(svgString)
+	shape, err := ParseSvgPath(svgString)
 	if err != nil {
 		return nil, err
 	}
-	// check
-	if !svgIsInCanvas(*shape){
-		return nil , OutOfBoundsError(OutOfBoundsError{})
+	if !svgIsInCanvas(*shape) {
+		return nil, OutOfBoundsError(OutOfBoundsError{})
 	}
 
 	fmt.Println(shape)
-	return shape , err
+	return shape, err
 }
 
 /*
@@ -149,7 +150,11 @@ func svgToShape(svgString string) (*Shape, error) {
 func svgIsInCanvas(shape Shape) bool {
 	canvasXMax := float64(canvasT.settings.CanvasXMax)
 	canvasYMax := float64(canvasT.settings.CanvasYMax)
-	for _ , edge := range shape.edges{
+	for _, edge := range shape.edges {
+		if edge.startPoint.x < 0 || edge.startPoint.y < 0 || edge.endPoint.x < 0 || edge.endPoint.y < 0 {
+			return false
+		}
+
 		if !floatEquals(edge.startPoint.x, canvasXMax) && edge.startPoint.x > canvasXMax {
 			return false
 		}
@@ -178,65 +183,49 @@ func hashShape(shape Shape) string {
 	return hex.EncodeToString(hash)
 }
 
-
 /*
 	Parses svg string to actual shape struct
-		- splits the path by space and increment
+		splits the path by space and increment
+		currPoint = the current position where the pen is when drawing the svg
+		start point = the point where the pen is moved to, for z cases
 	@param: d path of the svg string
 	@return: shape that is filled with edges
 */
-func ParseSvgPath2(path string)(*Shape, error) {
+func ParseSvgPath(path string) (*Shape, error) {
 	args := strings.Split(path, " ")
 	shape := Shape{}
-	currentIndex := 0
+	currIndex := 0
 	startPoint := Point{0.0, 0.0}
-	currentPoint := Point{0.0, 0.0}
-	for currentIndex < len(args) {
-		arg := args[currentIndex]
-		fmt.Println("The arguement " + strconv.Itoa(currentIndex) + " is: " + arg)
-		isValid := checkOverFlow(currentIndex, arg, len(args))
-		if !isValid{
-			return nil , InvalidShapeSvgStringError("not valid string")
+	currPoint := Point{0.0, 0.0}
+	for currIndex < len(args) {
+		arg := args[currIndex]
+		argUpper := strings.ToUpper(arg)
+		isValid := hasSufficientArgs(currIndex, arg, len(args))
+		if !isValid {
+			return nil, InvalidShapeSvgStringError("Not valid string: " + path)
 		}
-		switch arg {
+		switch argUpper {
 		case "M":
-			handleMCase(&currentPoint, &startPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, true)
-			break
-		case "m":
-			handleMCase(&currentPoint, &startPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, false)
-			break
+			handleMCase(&currPoint, &startPoint, args[currIndex+1], args[currIndex+2], arg == argUpper)
+			currIndex += 3
 		case "L":
-			handleLCase(&shape, &currentPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, true)
-			break
-		case "l":
-			handleLCase(&shape, &currentPoint, args[currentIndex + 1], args[currentIndex + 2], &currentIndex, false)
-			break
+			handleLCase(&shape, &currPoint, args[currIndex+1], args[currIndex+2], arg == argUpper)
+			currIndex += 3
 		case "V":
-			handleVCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, true)
-			break
-		case "v":
-			handleVCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, false)
-			break
+			handleVCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
+			currIndex += 2
 		case "H":
-			handleHCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, true)
-			break
-		case "h":
-			handleHCase(&shape, &currentPoint, args[currentIndex + 1], &currentIndex, false)
-			break
-		case "z":
+			handleHCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
+			currIndex += 2
 		case "Z":
-			handleZCase(&shape, &currentPoint, &startPoint, &currentIndex)
-			break
+			handleZCase(&shape, &currPoint, &startPoint)
+			currIndex += 1
 		default:
-			return nil , InvalidShapeSvgStringError("not valid string")
+			return nil, InvalidShapeSvgStringError("not valid string")
 		}
 	}
 	return &shape, nil
 }
-
-var TWONUMKEYWORDS = []string{"M", "m", "L", "l"}
-var ONENUMKEYWORDS = []string{"V", "v", "H", "h"}
-
 
 /*
 	Checks if there is sufficient numbers after the keyword in the path
@@ -245,11 +234,11 @@ var ONENUMKEYWORDS = []string{"V", "v", "H", "h"}
 	@param: length of the entire svg string
 	@return: the boolean if you have overflowed
 */
-func checkOverFlow(index int , keyword string ,  length int) bool {
+func hasSufficientArgs(index int, keyword string, length int) bool {
 	offset := 0
-	if containsKeyWord(TWONUMKEYWORDS, keyword){
+	if containsKeyWord(TwoNumKeyWords, keyword) {
 		offset = 2
-	} else if containsKeyWord(ONENUMKEYWORDS, keyword){
+	} else if containsKeyWord(OneNumKeyWords, keyword) {
 		offset = 1
 	}
 	return (index + offset) < length
@@ -261,9 +250,9 @@ func checkOverFlow(index int , keyword string ,  length int) bool {
 	@param: keyword for svg path
 	@return: the boolean if you have overflowed
 */
-func containsKeyWord(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
+func containsKeyWord(listOfValidKeyWords []string, keyWord string) bool {
+	for _, word := range listOfValidKeyWords {
+		if word == keyWord {
 			return true
 		}
 	}
@@ -280,13 +269,13 @@ func containsKeyWord(s []string, e string) bool {
 	@param: capital: to signal if capital keyword or not
 
 */
-func handleMCase(currentPoint *Point,startPoint *Point, xVal string, yVal string, currentIndex *int, capital bool) {
-	valX , err := strconv.ParseFloat(xVal, 64)
+func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal string, capital bool) {
+	valX, err := strconv.ParseFloat(xVal, 64)
 	checkErr("Not a valid float", err)
-	valY , err := strconv.ParseFloat(yVal, 64)
+	valY, err := strconv.ParseFloat(yVal, 64)
 	checkErr("Not a valid float", err)
 
-	if capital{
+	if capital {
 		currentPoint.x = valX
 		currentPoint.y = valY
 	} else {
@@ -295,56 +284,6 @@ func handleMCase(currentPoint *Point,startPoint *Point, xVal string, yVal string
 	}
 	// new start origin for z close
 	*startPoint = *currentPoint
-	*currentIndex += 3
-}
-
-/*
-	Handles the H/h case, adds a horizontal line
-	@param: shape: the pointer to the current shape struct, adds to the list of edges
-	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: xVal: the x value for the svg
-	@param: currentIndex: pointer to increment the val to next keyword
-	@param: capital: to signal if capital keyword or not
-
-*/
-func handleHCase(shape *Shape, currentPoint *Point, xVal string, currentIndex *int, capital bool){
-	valX , err := strconv.ParseFloat(xVal, 64)
-	checkErr("Not a valid float", err)
-	var endPoint Point
-	if capital{
-		endPoint = Point{valX, currentPoint.y}
-	} else {
-		endPoint = Point{currentPoint.x + valX, currentPoint.y}
-	}
-	edge := Edge{*currentPoint,endPoint }
-	shape.edges = append(shape.edges, edge)
-	*currentPoint = endPoint
-	*currentIndex += 2
-}
-
-/*
-	Handles the V/v case, adds a vertical line
-	@param: shape: the pointer to the current shape struct, adds to the list of edges
-	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: yVal: the y value for the svg
-	@param: currentIndex: pointer to increment the val to next keyword
-	@param: capital: to signal if capital keyword or not
-
-*/
-func handleVCase(shape *Shape, currentPoint *Point, yVal string, currentIndex *int, capital bool) {
-	valY , err := strconv.ParseFloat(yVal, 64)
-	checkErr("Not a valid float", err)
-	var endPoint Point
-
-	if capital {
-		endPoint = Point{currentPoint.x, valY}
-	} else {
-		endPoint = Point{currentPoint.x, currentPoint.y + valY}
-	}
-	edge := Edge{*currentPoint,endPoint }
-	shape.edges = append(shape.edges, edge)
-	*currentPoint = endPoint
-	*currentIndex += 2
 }
 
 /*
@@ -357,37 +296,82 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, currentIndex *i
 	@param: capital: to signal if capital keyword or not
 
 */
-func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, currentIndex *int, capital bool) {
-	valX , err := strconv.ParseFloat(xVal, 64)
+func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, capital bool) {
+	valX, err := strconv.ParseFloat(xVal, 64)
 	checkErr("Not a valid float", err)
-	valY , err := strconv.ParseFloat(yVal, 64)
+	valY, err := strconv.ParseFloat(yVal, 64)
 	checkErr("Not a valid float", err)
 
 	var endPoint Point
-	if capital{
-		endPoint = Point{ valX, valY}
+	if capital {
+		endPoint = Point{valX, valY}
 	} else {
 		endPoint = Point{currentPoint.x + valX, currentPoint.y + valY}
 	}
 
-	edge := Edge{*currentPoint,endPoint }
+	edge := Edge{*currentPoint, endPoint}
 	shape.edges = append(shape.edges, edge)
 	*currentPoint = endPoint
-	*currentIndex += 3
 }
 
 /*
-	Handles the z/z case, closes off the shape from the origin point (not case sensitive)
+	Handles the V/v case, adds a vertical line
+	@param: shape: the pointer to the current shape struct, adds to the list of edges
+	@param: currentPoint: pointer to the current point (where the pen lies)
+	@param: yVal: the y value for the svg
+	@param: currentIndex: pointer to increment the val to next keyword
+	@param: capital: to signal if capital keyword or not
+
+*/
+func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) {
+	valY, err := strconv.ParseFloat(yVal, 64)
+	checkErr("Not a valid float", err)
+	var endPoint Point
+
+	if capital {
+		endPoint = Point{currentPoint.x, valY}
+	} else {
+		endPoint = Point{currentPoint.x, currentPoint.y + valY}
+	}
+	edge := Edge{*currentPoint, endPoint}
+	shape.edges = append(shape.edges, edge)
+	*currentPoint = endPoint
+}
+
+/*
+	Handles the H/h case, adds a horizontal line
+	@param: shape: the pointer to the current shape struct, adds to the list of edges
+	@param: currentPoint: pointer to the current point (where the pen lies)
+	@param: xVal: the x value for the svg
+	@param: currentIndex: pointer to increment the val to next keyword
+	@param: capital: to signal if capital keyword or not
+
+*/
+func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) {
+	valX, err := strconv.ParseFloat(xVal, 64)
+	checkErr("Not a valid float", err)
+	var endPoint Point
+	if capital {
+		endPoint = Point{valX, currentPoint.y}
+	} else {
+		endPoint = Point{currentPoint.x + valX, currentPoint.y}
+	}
+	edge := Edge{*currentPoint, endPoint}
+	shape.edges = append(shape.edges, edge)
+	*currentPoint = endPoint
+}
+
+/*
+	Handles the Z/z case, closes off the shape from the origin point (not case sensitive)
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
 	@param: startPoint: the origin point (where the pen should go back to with z)
 	@param: currentIndex: pointer to increment the val to next keyword
 */
 
-func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point, currentIndex *int) {
-	edge := Edge{*currentPoint,*startPoint}
+func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
+	edge := Edge{*currentPoint, *startPoint}
 	shape.edges = append(shape.edges, edge)
-	*currentIndex += 1
 }
 
 // TODO
@@ -418,7 +402,7 @@ func InkUsed(shape *Shape) (ink int, err error) {
 // @param B Shape
 // @param canvasSettings CanvasSettings: Used to pass in the settings to the call to pointInShape
 // @return bool
-func ShapesIntersect (A Shape, B Shape, canvasSettings CanvasSettings) bool {
+func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	/*
 		1. First find if there's an intersection between the edges of the two polygons.
 		2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
@@ -466,9 +450,9 @@ func EdgesIntersect(A Edge, B Edge) bool {
 	// 2a: Check if the start or end point of B is on line A - this is for parallel lines
 	// If cross product between two points is 0, it means the two points are on the same line through origin
 	// meaning it is necessary to translate the edge to the origin, and the points of B accordingly
-	var edgeA Edge = Edge{startPoint:Point{x:0, y:0},
-		endPoint:Point{x:A.endPoint.x - A.startPoint.x, y:A.endPoint.y - A.startPoint.y}}
-	var pointB1 Point = Point{x: B.startPoint.x - A.startPoint.x, y:B.startPoint.y - A.startPoint.y}
+	var edgeA Edge = Edge{startPoint: Point{x: 0, y: 0},
+		endPoint: Point{x: A.endPoint.x - A.startPoint.x, y: A.endPoint.y - A.startPoint.y}}
+	var pointB1 Point = Point{x: B.startPoint.x - A.startPoint.x, y: B.startPoint.y - A.startPoint.y}
 	var pointB2 Point = Point{x: B.endPoint.x - A.startPoint.x, y: B.endPoint.y - A.startPoint.y}
 	if pointsAreOnOrigin(edgeA.endPoint, pointB1) || pointsAreOnOrigin(edgeA.endPoint, pointB2) {
 		return true
@@ -478,10 +462,10 @@ func EdgesIntersect(A Edge, B Edge) bool {
 	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
 	pointB1 = B.startPoint
 	pointB2 = B.endPoint
-	crossProduct1 := (A.endPoint.x - A.startPoint.x) * (pointB1.y - A.endPoint.y) -
-		(A.endPoint.y - A.startPoint.y) * (pointB1.x - A.endPoint.x)
-	crossProduct2 := (A.endPoint.x - A.startPoint.x) * (pointB2.y - A.endPoint.y) -
-		(A.endPoint.y - A.startPoint.y) * (pointB2.x - A.endPoint.x)
+	crossProduct1 := (A.endPoint.x-A.startPoint.x)*(pointB1.y-A.endPoint.y) -
+		(A.endPoint.y-A.startPoint.y)*(pointB1.x-A.endPoint.x)
+	crossProduct2 := (A.endPoint.x-A.startPoint.x)*(pointB2.y-A.endPoint.y) -
+		(A.endPoint.y-A.startPoint.y)*(pointB2.x-A.endPoint.x)
 	// if intersect, the signs of these cross products will be different
 	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
 }
@@ -539,7 +523,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	//var extendX int = 100000 //todo: replace this number with what the canvas bound is, I can't find it at this moment
 	//var edge Edge = Edge{startPoint:point, endPoint:Point{x:point.x + 1000000, y: point.y}}
 	var extendedX float64 = float64(settings.CanvasXMax)
-	var edge Edge = Edge{startPoint:point, endPoint:Point{x:extendedX, y:point.y}}
+	var edge Edge = Edge{startPoint: point, endPoint: Point{x: extendedX, y: point.y}}
 	// if this edge passes through an odd number of edges, the point is in shape
 	intersects := 0
 	for i := 0; i < len(shape.edges); i++ {
@@ -547,7 +531,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 			intersects++
 		}
 	}
-	return intersects % 2 == 1
+	return intersects%2 == 1
 }
 
 // Checks if the two points are on the origin. Private helper method for EdgesIntersect.
@@ -563,7 +547,7 @@ func pointsAreOnOrigin(A Point, B Point) bool {
 // @param B Point
 // @return int
 func getCrossProduct(A Point, B Point) float64 {
-	return A.x * B.y - B.x * A.y
+	return A.x*B.y - B.x*A.y
 }
 
 // Gets length of an edge
@@ -572,8 +556,8 @@ func getCrossProduct(A Point, B Point) float64 {
 func getLengthOfEdge(edge Edge) float64 {
 	// a^2 + b^2 = c^2
 	// a = horizontal length, b = vertical length
-	a2b2 := math.Pow(float64((edge.startPoint.x - edge.endPoint.x)), 2) +
-		math.Pow(float64((edge.startPoint.y - edge.endPoint.y)), 2)
+	a2b2 := math.Pow(float64((edge.startPoint.x-edge.endPoint.x)), 2) +
+		math.Pow(float64((edge.startPoint.y-edge.endPoint.y)), 2)
 	c := math.Sqrt(a2b2)
 	return c
 }
@@ -589,12 +573,12 @@ func getAreaOfShape(shape *Shape) float64 {
 	var current Edge = findNextEdge(shape, start)
 
 	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
-	for ; current.startPoint.x != start.startPoint.x && current.startPoint.y != start.startPoint.y ; {
+	for current.startPoint.x != start.startPoint.x && current.startPoint.y != start.startPoint.y {
 		area += getCrossProduct(current.startPoint, current.endPoint)
 		current = findNextEdge(shape, current)
 	}
 
-	return math.Abs(area/2)
+	return math.Abs(area / 2)
 }
 
 // Finds the next edge of the shape given current edge and the list of edges in shape
@@ -618,7 +602,7 @@ func findNextEdge(shape *Shape, edge Edge) Edge {
 // @param b float64
 // @return bool
 func floatEquals(a, b float64) bool {
-	if ((a - b) < EPSILON && (b - a) < EPSILON) {
+	if (a-b) < EPSILON && (b-a) < EPSILON {
 		return true
 	}
 	return false
