@@ -107,7 +107,6 @@ func checkSvgStringlen(svgString string) bool{
 	- different key words , filter out id="" or something with two d's
 	- does an svg have one path, if not we can loop through all the matches
 */
-
 func svgToShape(svgString string) (*Shape, error) {
 	if checkSvgStringlen(svgString){
 		return  nil, ShapeSvgStringTooLongError("Svg string has too many characters")
@@ -127,8 +126,8 @@ func svgToShape(svgString string) (*Shape, error) {
 
 /*
 	Check if all the edges in the shape are within the campus
-	// Todo
-	// @param: takes a shape assembled from the svg string, and canvas settings
+	@param: takes a shape assembled from the svg string, checks the list of edges' absolute points
+	@return: boolean if all edges are within the canvas
 */
 func svgIsInCanvas(shape Shape) bool {
 	canvasXMax := int(canvasT.settings.CanvasXMax)
@@ -150,6 +149,11 @@ func svgIsInCanvas(shape Shape) bool {
 	return true
 }
 
+/*
+	Uses md5 and hashes the shape
+	@param: shape
+	@return: hash of the shape
+*/
 func hashShape(shape Shape) string {
 	hasher := md5.New()
 	s := fmt.Sprintf("%v", shape)
@@ -393,6 +397,74 @@ func parseSvgPath(path string) (*Shape, error) {
 	}
 
 	return &shape, nil
+}
+
+/*
+
+*/
+
+func ParseSvgPath2(path string )(*Shape, error) {
+	args := strings.Split(path, " ")
+
+	count := 0
+	//currentPoint := Point{0, 0}
+	for count < len(args) {
+		arg := args[count]
+		fmt.Println("The arguement " + strconv.Itoa(count) + "is: " + arg)
+		isValid := checkOverFlow(count, arg, len(args))
+		if !isValid{
+			return nil , InvalidShapeSvgStringError("not valid string")
+		}
+		switch arg {
+		case "M":
+			break
+		case "m":
+			break
+		case "L":
+			break
+		case "l":
+			break
+		case "V":
+			break
+		case "v":
+			break
+		case "H":
+			break
+		case "h":
+			break
+		case "z":
+		case "Z":
+			break
+		}
+		count++
+	}
+	return nil, nil
+}
+
+var TWONUMKEYWORDS = []string{"M", "m", "L", "l"}
+var ONENUMKEYWORDS = []string{"V", "v", "H", "h"}
+
+func checkOverFlow(index int , keyword string ,  length int) bool {
+	offset := 0
+	if contains(TWONUMKEYWORDS, keyword){
+		offset = 2
+	} else if contains(ONENUMKEYWORDS, keyword){
+		offset = 1
+	}
+	return (index + offset) >= length
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
+func handleMcase(currentPoint Point, xVal float64, yVal float64)(int, int){
+	return 0,0
 }
 
 // TODO
