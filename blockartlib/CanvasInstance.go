@@ -406,12 +406,12 @@ func parseSvgPath(path string) (*Shape, error) {
 func ParseSvgPath2(path string )(*Shape, error) {
 	args := strings.Split(path, " ")
 
-	count := 0
+	currentIndex := 0
 	//currentPoint := Point{0, 0}
-	for count < len(args) {
-		arg := args[count]
-		fmt.Println("The arguement " + strconv.Itoa(count) + "is: " + arg)
-		isValid := checkOverFlow(count, arg, len(args))
+	for currentIndex < len(args) {
+		arg := args[currentIndex]
+		fmt.Println("The arguement " + strconv.Itoa(currentIndex) + "is: " + arg)
+		isValid := checkOverFlow(currentIndex, arg, len(args))
 		if !isValid{
 			return nil , InvalidShapeSvgStringError("not valid string")
 		}
@@ -435,8 +435,10 @@ func ParseSvgPath2(path string )(*Shape, error) {
 		case "z":
 		case "Z":
 			break
+		default:
+			return nil , InvalidShapeSvgStringError("not valid string")
 		}
-		count++
+		currentIndex++
 	}
 	return nil, nil
 }
@@ -463,8 +465,8 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func handleMcase(currentPoint Point, xVal float64, yVal float64)(int, int){
-	return 0,0
+func handleMcase(currentPoint Point, xVal float64, yVal float64)(*Point){
+	return nil
 }
 
 // TODO
