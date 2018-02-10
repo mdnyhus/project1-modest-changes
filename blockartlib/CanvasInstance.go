@@ -466,15 +466,7 @@ func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
 // @return error err
 func InkUsed(shape *Shape) (ink uint32, err error) {
 	var floatInk float64 = 0
-	// get border length of shape - just add all the edges up!
-	var edgeLength float64 = 0
-	for _, edge := range shape.Edges {
-		edgeLength += getLengthOfEdge(edge)
-	}
-	// since ink is an int, floor the edge lengths
-	// TODO - why are we flooring it here?
-	floatInk += math.Floor(edgeLength)
-	if shape.FilledIn {
+	if shape.filledIn {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
@@ -482,10 +474,16 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		area, err := getAreaOfShape(shape)
 		if err != nil {
 			floatInk += area
-			// TODO - is this not double counting the ink?
 		} else {
 			return 0, err
 		}
+	} else {
+		// get border length of shape - just add all the edges up!
+		var edgeLength float64 = 0
+		for _, edge := range shape.Edges {
+			edgeLength += getLengthOfEdge(edge)
+		}
+		floatInk = edgeLength
 	}
 	ink = uint32(floatInk)
 	return ink, nil
