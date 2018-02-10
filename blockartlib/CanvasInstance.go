@@ -19,6 +19,10 @@ type CanvasInstance struct{
 	settings CanvasSettings
 }
 
+const (
+	MAX_SVG_LENGTH = 128
+)
+
 // Public Methods
 func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
 	shape, e := convertShape(shapeType, shapeSvgString, fill, stroke)
@@ -68,7 +72,14 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error){
 	return 0, nil
 }
 
-// private methods
+/*
+	Trampoline function to call the parser, adds attributes after it parses
+	@param: shapeType for extra credit
+	@param: shape string for the svg
+	@param: fill to determine if the svg shape needs to calculate area
+	@param: width of the stroke
+	@return: internal shape struct ; error otherwise
+*/
 func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (*Shape, error){
 	var shape *Shape
 	var err error
@@ -86,8 +97,11 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	return shape , nil
 }
 
-
-
+/*
+	Checking for errors and printing the context
+	@param: string to describe the context of the error
+	@param: err, error that is bubbled up
+*/
 func checkErr(context string, err error){
 	if err != nil {
 		fmt.Println(context)
@@ -95,18 +109,23 @@ func checkErr(context string, err error){
 	}
 }
 
-func checkSvgStringlen(svgString string) bool{
-	return len(svgString) > 128
+/*
+	Checking for errors and printing the context
+	@param: svg path string
+	@returns: boolean to if string is over
+*/
+func checkSvgStringLen(svgString string) bool {
+	return len(svgString) > MAX_SVG_LENGTH
 }
 
 
-/* TODO: a lot of edge cases here for the svg
-	- lifting up the pen nultiple "m"
-	- different key words , filter out id="" or something with two d's
-	- does an svg have one path, if not we can loop through all the matches
+/*
+	Trampoline to call parser, error detections
+	@param: svg string for path
+	@return: shape that is parsed with the internal struct or error otherwise
 */
 func svgToShape(svgString string) (*Shape, error) {
-	if checkSvgStringlen(svgString){
+	if checkSvgStringLen(svgString){
 		return  nil, ShapeSvgStringTooLongError("Svg string has too many characters")
 	}
 	shape, err := ParseSvgPath2(svgString)
@@ -161,10 +180,12 @@ func hashShape(shape Shape) string {
 
 
 /*
-
+	Parses svg string to actual shape struct
+		- splits the path by space and increment
+	@param: d path of the svg string
+	@return: shape that is filled with edges
 */
-
-func ParseSvgPath2(path string )(*Shape, error) {
+func ParseSvgPath2(path string)(*Shape, error) {
 	args := strings.Split(path, " ")
 	shape := Shape{}
 	currentIndex := 0
@@ -216,6 +237,14 @@ func ParseSvgPath2(path string )(*Shape, error) {
 var TWONUMKEYWORDS = []string{"M", "m", "L", "l"}
 var ONENUMKEYWORDS = []string{"V", "v", "H", "h"}
 
+
+/*
+	Checks if there is sufficient numbers after the keyword in the path
+	@param: current index of the string
+	@param: keyword: current keyword for paths
+	@param: length of the entire svg string
+	@return: the boolean if you have overflowed
+*/
 func checkOverFlow(index int , keyword string ,  length int) bool {
 	offset := 0
 	if containsKeyWord(TWONUMKEYWORDS, keyword){
@@ -226,6 +255,12 @@ func checkOverFlow(index int , keyword string ,  length int) bool {
 	return (index + offset) < length
 }
 
+/*
+	Checks to see if it is a valid key word
+	@param: array of keywords
+	@param: keyword for svg path
+	@return: the boolean if you have overflowed
+*/
 func containsKeyWord(s []string, e string) bool {
 	for _, a := range s {
 		if a == e {
@@ -235,6 +270,16 @@ func containsKeyWord(s []string, e string) bool {
 	return false
 }
 
+/*
+	Handles the M/m case, moves the current location of the pen, as well as creates a new start point
+	@param: currentPoint: pointer to the current point (where the pen lies)
+	@param: startPoint: the origin point (where the pen should go back to with z)
+	@param: xVal: the x value for the svg
+	@param: yVal: the y value for the svg
+	@param: currentIndex: pointer to increment the val to next keyword
+	@param: capital: to signal if capital keyword or not
+
+*/
 func handleMCase(currentPoint *Point,startPoint *Point, xVal string, yVal string, currentIndex *int, capital bool) {
 	valX , err := strconv.ParseFloat(xVal, 64)
 	checkErr("Not a valid float", err)
@@ -253,6 +298,15 @@ func handleMCase(currentPoint *Point,startPoint *Point, xVal string, yVal string
 	*currentIndex += 3
 }
 
+/*
+	Handles the H/h case, adds a horizontal line
+	@param: shape: the pointer to the current shape struct, adds to the list of edges
+	@param: currentPoint: pointer to the current point (where the pen lies)
+	@param: xVal: the x value for the svg
+	@param: currentIndex: pointer to increment the val to next keyword
+	@param: capital: to signal if capital keyword or not
+
+*/
 func handleHCase(shape *Shape, currentPoint *Point, xVal string, currentIndex *int, capital bool){
 	valX , err := strconv.ParseFloat(xVal, 64)
 	checkErr("Not a valid float", err)
@@ -268,6 +322,15 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, currentIndex *i
 	*currentIndex += 2
 }
 
+/*
+	Handles the V/v case, adds a vertical line
+	@param: shape: the pointer to the current shape struct, adds to the list of edges
+	@param: currentPoint: pointer to the current point (where the pen lies)
+	@param: yVal: the y value for the svg
+	@param: currentIndex: pointer to increment the val to next keyword
+	@param: capital: to signal if capital keyword or not
+
+*/
 func handleVCase(shape *Shape, currentPoint *Point, yVal string, currentIndex *int, capital bool) {
 	valY , err := strconv.ParseFloat(yVal, 64)
 	checkErr("Not a valid float", err)
@@ -284,6 +347,16 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, currentIndex *i
 	*currentIndex += 2
 }
 
+/*
+	Handles the L/l case, adds a line to the edge
+	@param: shape: the pointer to the current shape struct, adds to the list of edges
+	@param: currentPoint: pointer to the current point (where the pen lies)
+	@param: xVal: the x value for the svg
+	@param: yVal: the y value for the svg
+	@param: currentIndex: pointer to increment the val to next keyword
+	@param: capital: to signal if capital keyword or not
+
+*/
 func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, currentIndex *int, capital bool) {
 	valX , err := strconv.ParseFloat(xVal, 64)
 	checkErr("Not a valid float", err)
@@ -302,6 +375,14 @@ func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, cu
 	*currentPoint = endPoint
 	*currentIndex += 3
 }
+
+/*
+	Handles the z/z case, closes off the shape from the origin point (not case sensitive)
+	@param: shape: the pointer to the current shape struct, adds to the list of edges
+	@param: currentPoint: pointer to the current point (where the pen lies)
+	@param: startPoint: the origin point (where the pen should go back to with z)
+	@param: currentIndex: pointer to increment the val to next keyword
+*/
 
 func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point, currentIndex *int) {
 	edge := Edge{*currentPoint,*startPoint}
