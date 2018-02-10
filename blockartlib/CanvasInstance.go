@@ -469,7 +469,7 @@ func handleMcase(currentPoint Point, xVal float64, yVal float64)(int, int){
 
 // TODO
 // - calculates the amount of ink required to draw the shape, in pixels
-// @param shape *blockartlib.Shape: pointer to shape whose ink cost will be calculated
+// @param shape *Shape: pointer to shape whose ink cost will be calculated
 // @return ink int: amount of ink required to draw the shape
 // @return error err: TODO
 func InkUsed(shape *Shape) (ink int, err error) {
@@ -490,14 +490,17 @@ func InkUsed(shape *Shape) (ink int, err error) {
 	return ink, nil
 }
 
-/*
-1. First find if there's an intersection between the edges of the two polygons.
-2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-4. If not, then you can conclude that the two polygons are completely outside each other.
-*/
-
+// @param A Shape
+// @param B Shape
+// @param canvasSettings CanvasSettings: Used to pass in the settings to the call to pointInShape
+// @return bool
 func ShapesIntersect (A Shape, B Shape, canvasSettings CanvasSettings) bool {
+	/*
+		1. First find if there's an intersection between the edges of the two polygons.
+		2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+		3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+		4. If not, then you can conclude that the two polygons are completely outside each other.
+	*/
 	//1
 	for i := 0; i < len(A.edges); i++ {
 		for j := 0; j < len(B.edges); j++ {
@@ -520,10 +523,14 @@ func ShapesIntersect (A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	return false
 }
 
-// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
+// Detects if two edges intersect
+// @param A Edge
+// @param B Edge
+// @return bool
 func EdgesIntersect(A Edge, B Edge) bool {
-	// 1: Do bounding boxes of each edge intersect?
+	// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
 
+	// 1: Do bounding boxes of each edge intersect?
 	var boxA Box = buildBoundingBox(A)
 	var boxB Box = buildBoundingBox(B)
 
@@ -533,6 +540,8 @@ func EdgesIntersect(A Edge, B Edge) bool {
 
 	// 2: Does edge A intersect with edge segment B?
 	// 2a: Check if the start or end point of B is on line A - this is for parallel lines
+	// If cross product between two points is 0, it means the two points are on the same line through origin
+	// meaning it is necessary to translate the edge to the origin, and the points of B accordingly
 	var edgeA Edge = Edge{startPoint:Point{x:0, y:0},
 		endPoint:Point{x:A.endPoint.x - A.startPoint.x, y:A.endPoint.y - A.startPoint.y}}
 	var pointB1 Point = Point{x: B.startPoint.x - A.startPoint.x, y:B.startPoint.y - A.startPoint.y}
@@ -560,6 +569,9 @@ type Box struct {
 	MaxY int
 }
 
+// Builds a bounding box for an edge. Private helper method for EdgesIntersect
+// @param A Edge
+// @return Box
 func buildBoundingBox(A Edge) Box {
 	var boxA Box = Box{}
 	if A.startPoint.x > A.endPoint.x {
@@ -579,15 +591,27 @@ func buildBoundingBox(A Edge) Box {
 	return boxA
 }
 
+// Checks if two boxes intersect. Private helper method for EdgesIntersect
+// @param A Box
+// @param B Box
+// @return bool
 func boxesIntersect(A Box, B Box) bool {
+	// https://silentmatt.com/rectangle-intersection/
 	return A.MaxX >= B.MinX &&
 		A.MinX <= B.MaxX &&
 		A.MaxY >= B.MinY &&
 		A.MinY <= B.MaxY
 }
 
-// https://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
+// Checks if given point is in the given shape. Helper method for ShapesIntersect.
+// Uses ray method - create a ray (horizontal edge) from point to edge of canvas,
+// if the ray passes through an odd number of edges then the point is in the shape
+// @param point Point
+// @param shape Shape
+// @param settings CanvasSettings: Get the max canvas limit for X
 func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
+	// https://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
+
 	//var extendX int = 100000 //todo: replace this number with what the canvas bound is, I can't find it at this moment
 	//var edge Edge = Edge{startPoint:point, endPoint:Point{x:point.x + 1000000, y: point.y}}
 	var extendedX int = int(settings.CanvasXMax)
@@ -602,14 +626,25 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	return intersects % 2 == 1
 }
 
+// Checks if the two points are on the origin. Private helper method for EdgesIntersect.
+// @param A Point
+// @param B Point
+// @return bool
 func pointsAreOnOrigin(A Point, B Point) bool {
 	return getCrossProduct(A, B) == 0
 }
 
+// Gets cross product of two points
+// @param A Point
+// @param B Point
+// @return int
 func getCrossProduct(A Point, B Point) int {
 	return A.x * B.y - B.x * A.y
 }
 
+// Gets length of an edge
+// @param edge Edge
+// @return float64
 func getLengthOfEdge(edge Edge) float64 {
 	// a^2 + b^2 = c^2
 	// a = horizontal length, b = vertical length
@@ -619,6 +654,11 @@ func getLengthOfEdge(edge Edge) float64 {
 	return c
 }
 
+// Gets area of shape by going through the edges until you've reached the beginning edge again.
+// This function is assumed to be called only when calculating ink used for a non-transparent fill shape,
+// which means the shape passed in is closed.
+// @param shape *Shape
+// @return int
 func getAreaOfShape(shape *Shape) int {
 	var start Edge = shape.edges[0]
 	var area int = getCrossProduct(start.startPoint, start.endPoint)
@@ -633,6 +673,10 @@ func getAreaOfShape(shape *Shape) int {
 	return int(math.Abs(float64(area)/2))
 }
 
+// Finds the next edge of the shape given current edge and the list of edges in shape
+// @param shape *Shape
+// @param edge Edge
+// @return Edge
 func findNextEdge(shape *Shape, edge Edge) Edge {
 	var ret Edge
 	for i := 0; i < len(shape.edges); i++ {
@@ -645,7 +689,10 @@ func findNextEdge(shape *Shape, edge Edge) Edge {
 	return ret
 }
 
-var EPSILON float64 = 0.00000001
+// Checks for float equality by checking if the difference between the two floats is small
+// @param a float64
+// @param b float64
+// @return bool
 func floatEquals(a, b float64) bool {
 	if ((a - b) < EPSILON && (b - a) < EPSILON) {
 		return true

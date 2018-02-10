@@ -21,7 +21,7 @@ type ShapeType int
 const (
 	// Path shape.
 	PATH ShapeType = iota
-
+	EPSILON float64 = 0.000001
 	// Circle shape (extra credit).
 	// CIRCLE
 )
