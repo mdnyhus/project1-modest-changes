@@ -288,18 +288,17 @@ func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
 // @return err error: returns any errors encountered, orone of the following errors:
 // 		- InvalidBlockHashError
 func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) error, args interface{}, reply interface{}) (err error) {
+	if fn == nil {
+		fn = crawlNoopHelper
+	}
+
 	// the chain, starting at headBlock
 	chain := []*Block{}
 	curr := headBlock
 	for {
 		// add current element to the end of the chain
 		chain = append(chain, curr)
-
-		if err = fn(headBlock, args, reply); err != nil {
-			return err
-		}
-
-		parent := getBlock(curr.prev)
+		parent := crawlChainHelperGetBlock(curr.prev)
 		if parent == nil {
 			// If the parent could not be found, then the hash is invalid.
 			return blockartlib.InvalidBlockHashError(hashBlock(*curr))
@@ -327,10 +326,10 @@ func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) erro
 			if err = validateBlock(chain[i:]); err != nil {
 				// The block was not valid, return the error.
 				return err
-			} else {
-				// Block is valid, so add it to the map.
-				blockTree[hash] = block
 			}
+
+			// Block is valid, so add it to the map.
+			blockTree[hash] = block
 		}
 	}
 
@@ -361,7 +360,7 @@ func crawlNoopHelper(block *Block, args interface{}, reply interface{}) error {
 // NOTE: this operation does no verification on any external blocks.
 // @param nonce string: The nonce of the block to get info on.
 // @return Block: The requested block, or nil if no block is found.
-func getBlock(hash string) (block *Block) {
+func crawlChainHelperGetBlock(hash string) (block *Block) {
 	// Search locally.
 	if block = blockTree[hash]; block != nil {
 		return block
