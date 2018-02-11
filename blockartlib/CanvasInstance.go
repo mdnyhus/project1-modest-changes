@@ -165,11 +165,12 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 			return nil, err
 		}
 	}
-	shape.svg = shapeSvgString
-	shape.filledIn = strings.ToLower(fill) != TRANSPARENT
-	shape.fillColor = fill
-	shape.borderColor = stroke
-	shape.hash = hashShape(*shape)
+	shape.Svg = shapeSvgString
+	shape.FilledIn = strings.ToLower(fill) != TRANSPARENT
+	shape.FillColor = fill
+	shape.BorderColor = stroke
+	// TODO - 
+	shape.Hash = hashShape(*shape)
 	return shape, nil
 }
 
@@ -223,7 +224,7 @@ func CheckShape(shape Shape) error{
 func svgIsInCanvas(shape Shape) bool {
 	canvasXMax := float64(canvasT.settings.CanvasXMax)
 	canvasYMax := float64(canvasT.settings.CanvasYMax)
-	for _, edge := range shape.edges {
+	for _, edge := range shape.Edges {
 		if edge.start.x < 0 || edge.start.y < 0 || edge.end.x < 0 || edge.end.y < 0 {
 			return false
 		}
@@ -400,7 +401,7 @@ func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, ca
 	}
 
 	edge := Edge{*currentPoint, endPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 	*currentPoint = endPoint
 	return nil
 }
@@ -427,7 +428,7 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) e
 		endPoint = Point{currentPoint.x, currentPoint.y + valY}
 	}
 	edge := Edge{*currentPoint, endPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 	*currentPoint = endPoint
 	return nil
 }
@@ -453,7 +454,7 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) e
 		endPoint = Point{currentPoint.x + valX, currentPoint.y}
 	}
 	edge := Edge{*currentPoint, endPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 	*currentPoint = endPoint
 	return nil
 }
@@ -468,23 +469,24 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) e
 
 func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
 	edge := Edge{*currentPoint, *startPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 }
 
 // - calculates the amount of ink required to draw the shape, in pixels
 // @param shape *Shape: pointer to shape whose ink cost will be calculated
 // @return ink int: amount of ink required to draw the shape
 // @return error err
-func InkUsed(shape *Shape) (ink int, err error) {
+func InkUsed(shape *Shape) (ink uint32, err error) {
 	var floatInk float64 = 0
 	// get border length of shape - just add all the edges up!
 	var edgeLength float64 = 0
-	for _, edge := range shape.edges {
+	for _, edge := range shape.Edges {
 		edgeLength += getLengthOfEdge(edge)
 	}
 	// since ink is an int, floor the edge lengths
+	// TODO - why are we flooring it here?
 	floatInk += math.Floor(edgeLength)
-	if shape.filledIn {
+	if shape.FilledIn {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
@@ -492,11 +494,12 @@ func InkUsed(shape *Shape) (ink int, err error) {
 		area, err := getAreaOfShape(shape)
 		if err != nil {
 			floatInk += area
+			// TODO - is this not double counting the ink?
 		} else {
 			return 0, err
 		}
 	}
-	ink = int(floatInk)
+	ink = uint32(floatInk)
 	return ink, nil
 }
 
@@ -507,7 +510,7 @@ func InkUsed(shape *Shape) (ink int, err error) {
 // @return int
 func getAreaOfShape(shape *Shape) (float64, error) {
 	// https://www.mathopenref.com/coordpolygonarea.html
-	var start Edge = shape.edges[0]
+	var start Edge = shape.Edges[0]
 	var area float64 = getCrossProduct(start.start, start.end)
 	current, err := findNextEdge(shape, start)
 	if err != nil {
@@ -529,20 +532,20 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 // @return bool
 func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	//1. First find if there's an intersection between the edges of the two polygons.
-	for _, edgeA := range A.edges {
-		for _, edgeB := range B.edges {
+	for _, edgeA := range A.Edges {
+		for _, edgeB := range B.Edges {
 			if EdgesIntersect(edgeA, edgeB) {
 				return true
 			}
 		}
 	}
 	//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-	pointA := A.edges[0].start
+	pointA := A.Edges[0].start
 	if pointInShape(pointA, B, canvasSettings) {
 		return true
 	}
 	//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-	pointB := B.edges[0].start
+	pointB := B.Edges[0].start
 	if pointInShape(pointB, A, canvasSettings) {
 		return true
 	}
@@ -637,7 +640,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	var edge = Edge{start: point, end: Point{x: extendedX, y: point.y}}
 	// if this edge passes through an odd number of edges, the point is in shape
 	intersections := 0
-	for _, e := range shape.edges {
+	for _, e := range shape.Edges {
 		if EdgesIntersect(edge, e) {
 			intersections++
 		}
@@ -680,7 +683,7 @@ func getLengthOfEdge(edge Edge) float64 {
 // @return Edge
 func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 	var ret *Edge
-	for _, edge := range shape.edges {
+	for _, edge := range shape.Edges {
 		if edge.start.x == edge.end.x &&
 			edge.start.y == edge.end.y {
 			ret = &edge

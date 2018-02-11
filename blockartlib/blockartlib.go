@@ -69,13 +69,18 @@ type Edge struct {
 }
 
 type Shape struct {
-	hash string
-	svg string
-	edges []Edge
-	filledIn bool
-	fillColor string //todo: hex?
-	borderColor string //todo: hex?
-	ink int //todo: are there different ink levels for different colors?
+	// TODO - Hash should be unique even for identical shapes - use a timestamp
+	Hash string
+	// TODO - add timestamp field, and use this to hash
+	// TODO - put all fields except hash in sub struct, and hash only that
+	// (so no circular hashing)
+	// NOTE: this will require fixing all references to these variables
+	Svg string
+	Edges []Edge
+	FilledIn bool
+	FillColor string //todo: hex?
+	BorderColor string //todo: hex?
+	Ink uint32 //todo: are there different ink levels for different colors?
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
