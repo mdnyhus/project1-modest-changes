@@ -97,6 +97,12 @@ func (e ServerConnectionError) Error() string {
 	return fmt.Sprintf("InkMiner: Could not connect to server for %s", string(e))
 }
 
+type KeyParseError string
+
+func (e KeyParseError) Error() string {
+	return fmt.Sprintf("InkMiner: Could not connect to server for %s", string(e))
+}
+
 // Receives op block flood calls. Verifies the op, which will add the op to currBlock and flood
 // op if it is valid.
 // @param op *Op: Op which will be verified, and potentially added and flooeded
@@ -714,9 +720,21 @@ func main() {
 
 	address = args[0]
 
-	//Is this correct?
+	//TODO: verify if this parse is this correct?
 	parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
+	if err != nil {
+		// can't proceed without a proper public key
+		fmt.Printf("miner needs a valid public key")
+		return
+	}
+
 	parsedPrivateKey , err := x509.ParseECPrivateKey([]byte(args[2]))
+	if err != nil {
+		// can't proceed without a proper private key
+		fmt.Printf("miner needs a valid private key")
+		return
+	}
+
 	publicKey = parsedPublicKey.(ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
 
@@ -728,7 +746,11 @@ func main() {
 		return
 	}
 	serverConn = client
-	registerMinerToServer()
+	if registerMinerToServer() != nil {
+		// can not proceed if it is not register to the server
+		fmt.Printf("miner can not register itself to the server")
+		return
+	}
 	go startHeartBeat()
 
 	// Setup RPC
