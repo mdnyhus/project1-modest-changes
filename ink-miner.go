@@ -12,16 +12,16 @@ $ go run ink-miner.go 127.0.0.1:2020
 package main
 
 import (
+	"./blockartlib"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"net"
 	"net/rpc"
+	"os"
 	"strings"
 	"sync"
 	"time"
-	"./blockartlib"
 )
 
 // Static
@@ -51,8 +51,8 @@ var ink int // TODO Do we want this? Or do we want a func that scans blockchain 
 
 type Op struct {
 	shape     *blockartlib.Shape // not nil iff adding shape
-	shapeHash string // non-empty iff removing shape
-	owner     string // hash of pub/priv keys
+	shapeHash string             // non-empty iff removing shape
+	owner     string             // hash of pub/priv keys
 }
 
 type Block struct {
@@ -115,38 +115,22 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 	}
 
 	*reply = false
-	len := 0
-	curr := block
 
-	for !isGenesis(*curr) {
-		// TODO: Verify ops.
-		if verifyHash(hashBlock(*curr)) {
-			len++
-			currBlock = getBlock(curr.prev)
-			if currBlock == nil {
-				// Could not verify due to missing block in chain.
-				return BlockVerificationError(block.nonce)
-			}
-		} else {
-			// Could not verify due to invalid nonce in chain.
-			return BlockVerificationError(block.nonce)
-		}
-	}
-
-	if len != block.len {
-		// Could not verify due to block len claim inconsistencies.
-		return BlockVerificationError(block.nonce)
+	// the crawl by default does all the work we need, so no special helper/args/reply is required
+	var inter interface{}
+	if err := crawlChain(block, nil, inter, inter); err != nil {
+		return err
 	}
 
 	*reply = true
 	headBlockLock.Lock()
 	defer headBlockLock.Unlock()
 
-	if len > headBlock.len {
+	if block.len > headBlock.len {
 		headBlock = block
 	}
 
-	floodBlock(block)
+	floodBlock(*block)
 
 	return nil
 }
@@ -178,45 +162,233 @@ func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) 
 // Adds a new shape ot the canvas
 // @param args *blockartlib.AddShapeArgs: contains the shape to be added, and the validateNum
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
-// @return error: Any errors produced
+// @return err error: Any errors produced
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
 	// construct Op for shape
 	op := Op{
-		shape: &args.Shape,
+		shape:     &args.Shape,
 		shapeHash: "",
-		owner: "", // TODO - generate owner hash
+		owner:     "", // TODO - generate owner hash
 	}
-	
+
 	// receiveNewOp will try to add op to current block and flood op
 	if err = receiveNewOp(op); err != nil {
 		// return error in reply so that it is not cast
 		reply.Error = err
 	}
 
+	// TODO - wait until args.ValidateNum blocks have been added this block before returning
+
 	return nil
 }
 
-// Returns block with given nonce. Will search neighbours if not found locally.
+// TODO
+// Returns the full SvgString fro the given hash, if it exists on the longest
+// @param args *blockartlib.GetSvgStringArgs: contains the hash of the shape to be returned
+// @param reply *blockartlib.GetSvgStringReply: contains the shape string, and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockartlib.GetSvgStringReply) (err error) {
+	// TODO - iterate through headBlock searching for the string
+	// For now, just return an InvalidShapeHashError
+	reply.Error = blockartlib.InvalidShapeHashError(args.ShapeHash)
+	return nil
+}
+
+// TODO
+// Returns the amount of ink remaining for this miner, in pixels
+// @param args args *int: dummy argument that is not used
+// @param reply *uint32: amount of remaining ink, in pixels
+// @param err error: Any errors produced
+func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
+	// TODO - iterate through headBlock to calculate remaining ink
+	*reply = 0
+	return nil
+}
+
+// TODO
+// Deletes the shape associated with the passed shapeHash, if it exists and is owned by this miner.
+// args.ValidateNum specifies the number of blocks (no-op or op) that must follow the block with this
+// operation in the block-chain along the longest path before the operation can return successfully.
+// @param args *blockartlib.DeleteShapeArgs: contains the ValidateNum and ShapeHash
+// @param reply *blockartlib.DeleteShapeReply: contains the ink remaining, and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
+	// TODO - iterate through headBlock searching for shape, and delete it
+	// Then wait until args.ValidateNum blocks have been added this block before returning
+	// For now, just return a ShapeOwnerError
+	reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
+	return nil
+}
+
+// TODO
+// Returns the shape hashes contained by the block in BlockHash
+// @param args *string: the blockHash
+// @param reply *blockartlib.GetShapesReply: contains the slice of shape hashes and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err error) {
+	// TODO - search for the block, construct a slice of hashes and return it
+	// For now, just return an InvalidBlockHashError
+	reply.Error = blockartlib.InvalidBlockHashError(*args)
+	return nil
+}
+
+// TODO
+// Returns the hash of the genesis block of the block chain
+// @param args args *int: dummy argument that is not used
+// @param reply *uint32: hash of genesis block
+// @param err error: Any errors produced
+func (l *LibMin) GetGenesisBlock(args *int, reply *string) (err error) {
+	// TODO
+	*reply = ""
+	return nil
+}
+
+// TODO
+// Returns the shape hashes contained by the block in BlockHash
+// @param args *string: the blockHash
+// @param reply *blockartlib.GetChildrenReply: contains the slice of block hashes and any internal errors
+// @param err error: Any errors produced
+func (l *LibMin) GetChildren(args *string, reply *blockartlib.GetChildrenReply) (err error) {
+	// TODO - search for children whose parent is the passed BlockHash
+	// For now, just return an InvalidBlockHashError
+	reply.Error = blockartlib.InvalidBlockHashError(*args)
+	return nil
+}
+
+// TODO
+// Closes the canvas
+// @param args args *int: dummy argument that is not used
+// @param reply *uint32: hash of genesis block
+// @param err error: Any errors produced
+func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
+	// TODO
+	*reply = ""
+	return nil
+}
+
+// Runs the passed function on each element in the blockchain (including the headBlock),
+// starting at headBlock.
+// To do this, crawlChain first builds up the entire chain and validates any external blocks
+// in reverse order. If any block is not valid, returns the error for the entire crawl and does not
+// store any blocks.
+// If all blocks are valid, then makes a third pass through, calling fn on each block, starting at
+// headBlock. If fn returns an error, stops iterating and returns the error
+// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
+// @param headBlock *Block: head block of chain from which ink will be calculated
+// @param fn func: the helper function that will be run on each block. It behaves like an RPC call, and
+//                 takes 3 arguments and returns an error:
+//				   @param *Block: the block on which the function is called
+//				   @param interface: the arguments to the function (like in RPC)
+//				   @param interface: the reply from the function; MUST be a pointer to a struct
+//									 (return values, again like in RPC)
+//				   @return error: any errors returned by the function
+//				   Note that the args and reply must have a struct defintion (like in RPC) and must
+//                 be cast to that type in fn, with a call like argsT, ok := args.(Type)
+// @return err error: returns any errors encountered, orone of the following errors:
+// 		- InvalidBlockHashError
+func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) error, args interface{}, reply interface{}) (err error) {
+	if fn == nil {
+		fn = crawlNoopHelper
+	}
+
+	// the chain, starting at headBlock
+	chain := []*Block{}
+	curr := headBlock
+	for {
+		// add current element to the end of the chain
+		chain = append(chain, curr)
+		parent := crawlChainHelperGetBlock(curr.prev)
+		if parent == nil {
+			// If the parent could not be found, then the hash is invalid.
+			return blockartlib.InvalidBlockHashError(hashBlock(*curr))
+		}
+
+		if isGenesis(*curr) {
+			// We're at the end of the chain.
+			break
+		}
+
+		curr = parent
+	}
+
+	// Validate in reverse order (from GenesisBlock to headBlock).
+	for i := len(chain) - 1; i >= 0; i-- {
+		block := chain[i]
+		hash := hashBlock(*block)
+		if _, exists := blockTree[hash]; exists {
+			// Block is already stored locally, so has already been validated.
+			// Since block has already been validated, all parents of block
+			// must also be valid.
+			break
+		} else {
+			// validate block, knowing that all parent blocks are valid
+			if err = validateBlock(chain[i:]); err != nil {
+				// The block was not valid, return the error.
+				return err
+			}
+
+			// Block is valid, so add it to the map.
+			blockTree[hash] = block
+		}
+	}
+
+	// Blocks are valid, so now run the function on each block in the chain,
+	// starting from the headBlock.
+	for i := 0; i < len(chain); i++ {
+		if err = fn(chain[i], args, reply); err != nil {
+			// if an error is encountered, return it
+			return err
+		}
+	}
+
+	return nil
+}
+
+// No-op crawl helper
+// This function should be used when the default behaviour of crawlChain is sufficient
+// @param: block: block on which the function is called; does nothing
+// @param: args: unused
+// @param: reply: unused
+// @return error: always nil
+func crawlNoopHelper(block *Block, args interface{}, reply interface{}) error {
+	return nil
+}
+
+// Returns block with given hash.
+// If the block is not stored locally, try to get the block from another miner.
+// NOTE: this operation does no verification on any external blocks.
 // @param nonce string: The nonce of the block to get info on.
 // @return Block: The requested block, or nil if no block is found.
-func getBlock(hash string) (block *Block) {
+func crawlChainHelperGetBlock(hash string) (block *Block) {
 	// Search locally.
 	if block = blockTree[hash]; block != nil {
 		return block
 	}
 
+	// block is not stored locally, search externally
 	for _, n := range neighbours {
 		err := n.conn.Call("MinMin.RequestBlock", hash, block)
 		if err != nil {
 			// Block not found, keep searching.
 			continue
 		}
-		// Save block locally.
-		blockTree[hash] = block
+		// return the block
 		return block
 	}
 
 	// Block not found.
+	return nil
+}
+
+// TODO
+// Validates the FIRST block in the slice, ASSUMING that all other blocks in the
+// chain have already been validated
+// @param chain []*Block: the block chain. The first element in the slice is the
+//                        block being validated, assume rest of blocks are valid
+//                        (and thus the last block should be the Genesis block)
+// @return err error: any errors from validation; nil if block is valid
+func validateBlock(chain []*Block) (err error) {
+	// TODO
 	return nil
 }
 
@@ -337,14 +509,14 @@ func receiveNewOp(op Op) (err error) {
 
 	// op is valid; add op to currBlock
 	currBlock.ops = append(currBlock.ops, op)
-	
+
 	// floodOp on a separate thread; this miner's operation doesn't depend on the flood
 	go floodOp(op)
 
 	return nil
 }
 
-// Validates an operation. Returned error is nil if op is valid starting at 
+// Validates an operation. Returned error is nil if op is valid starting at
 // headBlock; false otherwise.
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
 // @param op Op: Op to be validated.
@@ -379,7 +551,7 @@ func validateOp(op Op, headBlock *Block) (err error) {
 	}
 
 	if op.shape == nil {
-		if e := shapeExists(op.shapeHash, op.owner, headBlock); e != nil {	
+		if e := shapeExists(op.shapeHash, op.owner, headBlock); e != nil {
 			// Op is trying to delete a shape that does not exist or that does not belong
 			// to op.owner
 			return e
@@ -395,7 +567,7 @@ func validateOp(op Op, headBlock *Block) (err error) {
 // - TODO shape fill spec re. convex or self-intersections
 // - shape points are within the canvas
 // @param shape *blockartlib.Shape: pointer to shape that will be validated
-// @return err error: Error indicating if shape is valid. Can be nil or one 
+// @return err error: Error indicating if shape is valid. Can be nil or one
 //                    of the following errors:
 // 						- OutOfBoundsError
 func validateShape(shape *blockartlib.Shape) (err error) {
@@ -407,11 +579,11 @@ func validateShape(shape *blockartlib.Shape) (err error) {
 // - checks if the passed shape intersects with any shape currently on the canvas
 //   that is NOT owned by this miner, starting at headBlock
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param shape *blockartlib.Shape: pointer to shape that will be checked for 
+// @param shape *blockartlib.Shape: pointer to shape that will be checked for
 //                                  intersections
 // @param headBlock *Block: head block of chain from which ink will be calculated
 // @return shapeOverlapHash string: empty if shape does intersect with any other
-//                                  non-owned shape; otherwise it is the hash of 
+//                                  non-owned shape; otherwise it is the hash of
 //                                  the shape this shape overlaps
 func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash string) {
 	// TODO
@@ -427,7 +599,7 @@ func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash
 // @param shapeHash string: hash of shape to check
 // @param owner string: string identfying miner
 // @param headBlock *Block: head block of chain from which ink will be calculated
-// @return err error: Error indicating if shape is valid. Can be nil or one 
+// @return err error: Error indicating if shape is valid. Can be nil or one
 //                    of the following errors:
 // 						- ShapeOwnerError
 //						- TODO - error if shape does not exist?
@@ -458,9 +630,9 @@ func main() {
 	// check number of arguments
 	if len(args) != numArgs {
 		if len(args) < numArgs {
-			fmt.Printf("too few arguments; expected %d, received%d\n", numArgs, len(args))
+			fmt.Printf("too few arguments; expected %d, received %d\n", numArgs, len(args))
 		} else {
-			fmt.Printf("too many arguments; expected %d, received%d\n", numArgs, len(args))
+			fmt.Printf("too many arguments; expected %d, received %d\n", numArgs, len(args))
 		}
 		// can't proceed without correct number of arguments
 		return
@@ -479,6 +651,6 @@ func main() {
 		return
 	}
 	go server.Accept(l)
-	
+
 	// TODO - should start mining
 }
