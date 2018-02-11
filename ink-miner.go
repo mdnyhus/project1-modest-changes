@@ -22,12 +22,15 @@ import (
 	"sync"
 	"time"
 	"./blockartlib"
-)
+	"./proj1-server/rpcCommunication"
+	"crypto/ecdsa"
+	"crypto/x509"
 
+)
 // Static
 var canvasSettings blockartlib.CanvasSettings
-var minConn int
-var n int // Num 0's required in POW
+var publicKey ecdsa.PublicKey
+var privateKey ecdsa.PrivateKey
 
 // Current block
 var currBlock *Block
@@ -45,6 +48,9 @@ var neighboursLock = &sync.Mutex{}
 var blockTree map[string]*Block
 var serverConn *rpc.Client
 var address string
+
+// Network Instructions
+var minerNetSettings rpcCommunication.MinerNetSettings
 
 // FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
@@ -83,6 +89,12 @@ type BlockVerificationError string
 
 func (e BlockVerificationError) Error() string {
 	return fmt.Sprintf("InkMiner: Block with hash %s could not be verified", string(e))
+}
+
+type ServerConnectionError string
+
+func (e ServerConnectionError) Error() string {
+	return fmt.Sprintf("InkMiner: Could not connect to server for %s", string(e))
 }
 
 // Receives op block flood calls. Verifies the op, which will add the op to currBlock and flood
@@ -146,7 +158,7 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 		headBlock = block
 	}
 
-	floodBlock(block)
+	floodBlock(*block)
 
 	return nil
 }
@@ -240,6 +252,7 @@ func hashBlock(block Block) string {
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
 func verifyHash(hash string) bool {
+	n := int(minerNetSettings.PoWDifficultyOpBlock)
 	return hash[len(hash)-n:] == strings.Repeat("0", n)
 }
 
@@ -448,12 +461,45 @@ func inkAvail(miner string, headBlock *Block) (ink int) {
 	return 0
 }
 
+/*
+	Registering the miner to the server, calling the server's RPC method
+	@return error: ServerConnectionError if connection to server fails
+*/
+func registerMinerToServer() error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
+	if err != nil {
+		return ServerConnectionError("resolve tcp error")
+	}
+	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr,Key: publicKey}
+	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
+	if clientErr != nil {
+		return ServerConnectionError("registration failure ")
+	}
+	return nil
+}
+
+/*
+	After registering with the server, the miner will ping the server every
+	interval / 2
+	@return error: ServerConnectionError if connection to server fails
+*/
+func startHeartBeat() error {
+	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
+		var reply bool
+		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
+		if clientErr != nil {
+			return ServerConnectionError("heartbeat failure")
+		}
+	}
+	return nil
+}
+
 func main() {
 	// ink-miner should take one parameter, which is its address
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 1
+	numArgs := 3
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -468,7 +514,21 @@ func main() {
 
 	address = args[0]
 
+	//Is this correct?
+	parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
+	parsedPrivateKey , err := x509.ParseECPrivateKey([]byte(args[2]))
+	publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	privateKey = *parsedPrivateKey
+
 	// TODO - should communicate with server to get CanvasSettings and other miners in the network
+	client, err := rpc.Dial("tcp", address)
+	if err != nil {
+		// can't proceed without a connection to the server
+		return
+	}
+	serverConn = client
+	registerMinerToServer()
+	go startHeartBeat()
 
 	// Setup RPC
 	server := rpc.NewServer()
