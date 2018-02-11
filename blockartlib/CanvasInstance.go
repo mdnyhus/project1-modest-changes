@@ -470,12 +470,15 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
-		// TODO: Unless assumption confirmed need to change
+		// We need to check if the shape passed in is in fact simple and closed
 		area, err := getAreaOfShape(shape)
 		if err != nil {
 			floatInk += area
 		} else {
 			return 0, err
+		}
+		if !isSimpleShape(shape) {
+			return 0, errors.New("Can't have non-transparent ink if shape has self-intersecting edges")
 		}
 	} else {
 		// get border length of shape - just add all the edges up!
@@ -487,6 +490,21 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 	}
 	ink = uint32(floatInk)
 	return ink, nil
+}
+
+// Checks if shape is closed and simple
+// @param shape Shape
+// @return bool
+func isSimpleShape(shape *Shape) bool {
+	// Check if the edges don't self-intersect ("simple")
+	for i := 0; i < len(shape.edges); i++ {
+		for j := i + 1; j < len(shape.edges); j++ {
+			if EdgesIntersect(shape.edges[i], shape.edges[j], false) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Gets area of shape by going through the edges until you've reached the beginning edge again.
@@ -507,6 +525,9 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 	for current.start.x != start.start.x && current.start.y != start.start.y {
 		area += getCrossProduct(current.start, current.end)
 		current, err = findNextEdge(shape, *current)
+		if err != nil {
+			return 0, errors.New("Couldn't find area of an open shape")
+		}
 	}
 
 	return math.Abs(area / 2), nil
@@ -520,7 +541,7 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	//1. First find if there's an intersection between the edges of the two polygons.
 	for _, edgeA := range A.Edges {
 		for _, edgeB := range B.Edges {
-			if EdgesIntersect(edgeA, edgeB) {
+			if EdgesIntersect(edgeA, edgeB, true) {
 				return true
 			}
 		}
@@ -543,7 +564,7 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 // @param A Edge
 // @param B Edge
 // @return bool
-func EdgesIntersect(A Edge, B Edge) bool {
+func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 	// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
 
 	// 1: Check if each edge intersect
@@ -562,8 +583,15 @@ func EdgesIntersect(A Edge, B Edge) bool {
 		end: Point{x: A.end.x - A.start.x, y: A.end.y - A.start.y}}
 	var pointB1 Point = Point{x: B.start.x - A.start.x, y: B.start.y - A.start.y}
 	var pointB2 Point = Point{x: B.end.x - A.start.x, y: B.end.y - A.start.y}
-	if pointsAreOnOrigin(edgeA.end, pointB1) || pointsAreOnOrigin(edgeA.end, pointB2) {
-		return true
+	if pointsAreOnSameLine(edgeA.end, pointB1) || pointsAreOnSameLine(edgeA.end, pointB2) {
+		if !countTipToTipIntersect {
+		// if the endpoints are the only ones touching the edge, don't return true
+			if !onlyIntersectsAtEndPoint(A, pointB1, pointB2) {
+				return true
+			}
+		} else {
+			return true
+		}
 	}
 	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
 	// if they are, the lines intersect
@@ -577,6 +605,39 @@ func EdgesIntersect(A Edge, B Edge) bool {
 		Point{x: A.end.y - A.start.y, y: pointB2.y - A.end.y})
 	// if intersect, the signs of these cross products will be different
 	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
+}
+
+// Checks if the two lines (B represented by its endpoints)
+// only intersect at one of its tips. Private helper function for EdgesIntersect.
+// @param A Edge
+// @param pointB1 Point
+// @param pointB2 Point
+// @return bool
+func onlyIntersectsAtEndPoint(edge Edge, pointB1 Point, pointB2 Point) bool {
+	// to account for corner cases of horizontal/vertical lines,
+	// have to check if line is more "vertical" or "horizontal"
+	xDelt := math.Abs(edge.start.x - edge.end.x)
+	yDelt := math.Abs(edge.start.y - edge.end.y)
+	if pointB1 == edge.start || pointB1 == edge.end {
+		// have to check if pointB2 is somewhere along the A line
+		if xDelt > yDelt {
+			return !(pointB2.x >= edge.start.x && pointB2.x <= edge.end.x ||
+				pointB2.x >= edge.end.x && pointB2.x <= edge.start.x)
+		} else {
+			return !(pointB2.y >= edge.start.y && pointB2.y <= edge.end.y ||
+				pointB2.y >= edge.end.y && pointB2.y <= edge.start.y)
+		}
+	} else if pointB2 == edge.start || pointB2 == edge.end {
+		// have to check if pointB1 is somewhere along A line
+		if xDelt > yDelt {
+			return !(pointB1.x >= edge.start.x && pointB1.x <= edge.end.x ||
+				pointB1.x >= edge.end.x && pointB1.x <= edge.start.x)
+		} else {
+			return !(pointB1.y >= edge.start.y && pointB1.y <= edge.end.y ||
+				pointB1.y >= edge.end.y && pointB1.y <= edge.start.y)
+		}
+	}
+	return false
 }
 
 // Builds a bounding box for an edge. Private helper method for EdgesIntersect
@@ -627,7 +688,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	// if this edge passes through an odd number of edges, the point is in shape
 	intersections := 0
 	for _, e := range shape.Edges {
-		if EdgesIntersect(edge, e) {
+		if EdgesIntersect(edge, e, true) {
 			intersections++
 		}
 	}
@@ -638,7 +699,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 // @param A Point
 // @param B Point
 // @return bool
-func pointsAreOnOrigin(A Point, B Point) bool {
+func pointsAreOnSameLine(A Point, B Point) bool {
 	return getCrossProduct(A, B) < EPSILON
 }
 
