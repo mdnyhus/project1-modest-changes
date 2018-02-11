@@ -2,14 +2,14 @@ package blockartlib
 
 import (
 	"crypto/ecdsa"
-	"net/rpc"
-	"math"
-	"fmt"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"math"
+	"net/rpc"
 	"strconv"
 	"strings"
-	"errors"
 )
 
 type CanvasInstance struct {
@@ -21,7 +21,6 @@ type CanvasInstance struct {
 }
 
 const MAX_SVG_LENGTH = 128
-
 
 var TwoNumKeyWords = []string{"M", "m", "L", "l"}
 var OneNumKeyWords = []string{"V", "v", "H", "h"}
@@ -55,7 +54,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 // Gets SVG string from the hashed shape
 // @param canvas CanvasInstance
 // @return string, error
-func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error){
+func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error) {
 	args := &GetSvgStringArgs{ShapeHash: shapeHash}
 	var reply GetSvgStringReply
 	if canvas.client.Call("LimMin.GetSvgString", args, &reply); err != nil {
@@ -68,7 +67,7 @@ func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, e
 // Gets ink remaining from canvas
 // @param canvas CanvasInstance
 // @return uint32, error
-func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error){
+func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
 	// args are not used for GetInk
 	var args int
 	var reply uint32
@@ -95,7 +94,7 @@ func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (i
 // Gets the shapes' hashes from a hashed block
 // @param canvas CanvasInstance
 // @return []string, error
-func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error){
+func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error) {
 	var reply GetShapesReply
 	if canvas.client.Call("LimMin.GetShapes", &blockHash, &reply); err != nil {
 		return shapeHashes, DisconnectedError(canvas.minerAddr)
@@ -107,7 +106,7 @@ func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, 
 // Gets the hash of the head block of the chain
 // @param canvas CanvasInstance
 // @return string, error
-func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error){
+func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
 	// args are not used for GetInk
 	var args int
 	var reply string
@@ -133,10 +132,10 @@ func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string
 // Close the canvas
 // @param canvas CanvasInstance
 // @return uint32, error
-func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error){
+func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
 	// TODO - stop any future operations on this canvas object
 	// check https://piazza.com/class/jbyh5bsk4ez3cn?cid=428
-	
+
 	// get the ink remaining; args are not used for GetInk
 	var args int
 	var reply uint32
@@ -159,7 +158,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	var shape *Shape
 	if shapeType == PATH {
 		var err error
-		shape , err = svgToShape(shapeSvgString)
+		shape, err = svgToShape(shapeSvgString)
 		shape, err = svgToShape(shapeSvgString)
 		if err != nil {
 			return nil, err
@@ -169,7 +168,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	shape.FilledIn = strings.ToLower(fill) != TRANSPARENT
 	shape.FillColor = fill
 	shape.BorderColor = stroke
-	// TODO - 
+	// TODO -
 	shape.Hash = hashShape(*shape)
 	return shape, nil
 }
@@ -197,25 +196,26 @@ func svgToShape(svgString string) (*Shape, error) {
 		return nil, err
 	}
 	checkErr := CheckShape(*shape)
-	if checkErr != nil{
+	if checkErr != nil {
 		return nil, checkErr
 	}
 	return shape, err
 }
 
 /*  Checking the internal shape struct for the following cases:
-	1. All edges are within the canvas
-	2. TODO: Shapes do self intersect? -> only matters if fill is non transparent
-	@param: shape: Internal shape representation
-	@return: true if shape is valid , false otherwise
+1. All edges are within the canvas
+2. TODO: Shapes do self intersect? -> only matters if fill is non transparent
+@param: shape: Internal shape representation
+@return: true if shape is valid , false otherwise
 */
 
-func CheckShape(shape Shape) error{
+func CheckShape(shape Shape) error {
 	if !svgIsInCanvas(shape) {
 		return OutOfBoundsError{}
 	}
 	return nil
 }
+
 /*
 	Check if all the edges in the shape are within the campus
 	@param: takes a shape assembled from the svg string, checks the list of edges' absolute points
@@ -289,7 +289,7 @@ func ParseSvgPath(path string) (*Shape, error) {
 			parseError = err
 			currIndex += 3
 		case "V":
-			err:= handleVCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
+			err := handleVCase(&shape, &currPoint, args[currIndex+1], arg == argUpper)
 			parseError = err
 			currIndex += 2
 		case "H":
@@ -518,12 +518,12 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 	}
 
 	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
-	for ; current.start.x != start.start.x && current.start.y != start.start.y ; {
+	for current.start.x != start.start.x && current.start.y != start.start.y {
 		area += getCrossProduct(current.start, current.end)
 		current, err = findNextEdge(shape, *current)
 	}
 
-	return math.Abs(area/2), nil
+	return math.Abs(area / 2), nil
 }
 
 // @param A Shape
@@ -585,10 +585,10 @@ func EdgesIntersect(A Edge, B Edge) bool {
 	pointB1 = B.start
 	pointB2 = B.end
 	//A.x * B.y - B.x * A.y
-	crossProduct1 := getCrossProduct(Point{x:A.end.x - A.start.x, y:pointB1.x - A.end.x},
-										Point{x:A.end.y - A.start.y, y:pointB1.y - A.end.y})
-	crossProduct2 := getCrossProduct(Point{x:A.end.x - A.start.x, y:pointB2.x - A.end.x},
-										Point{x:A.end.y - A.start.y, y:pointB2.y - A.end.y})
+	crossProduct1 := getCrossProduct(Point{x: A.end.x - A.start.x, y: pointB1.x - A.end.x},
+		Point{x: A.end.y - A.start.y, y: pointB1.y - A.end.y})
+	crossProduct2 := getCrossProduct(Point{x: A.end.x - A.start.x, y: pointB2.x - A.end.x},
+		Point{x: A.end.y - A.start.y, y: pointB2.y - A.end.y})
 	// if intersect, the signs of these cross products will be different
 	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
 }
@@ -645,7 +645,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 			intersections++
 		}
 	}
-	return intersections % 2 == 1
+	return intersections%2 == 1
 }
 
 // Checks if the two points are on the origin. Private helper method for EdgesIntersect.
@@ -661,7 +661,7 @@ func pointsAreOnOrigin(A Point, B Point) bool {
 // @param B Point
 // @return int
 func getCrossProduct(A Point, B Point) float64 {
-	return A.x * B.y - B.x * A.y
+	return A.x*B.y - B.x*A.y
 }
 
 // Gets length of an edge
@@ -675,7 +675,6 @@ func getLengthOfEdge(edge Edge) float64 {
 	c := math.Sqrt(a2b2)
 	return c
 }
-
 
 // Finds the next edge of the shape given current edge and the list of edges in shape
 // @param shape *Shape
@@ -698,5 +697,5 @@ func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 // @param b float64
 // @return bool
 func floatEquals(a, b float64) bool {
-	return (a - b) < EPSILON && (b - a) < EPSILON
+	return (a-b) < EPSILON && (b-a) < EPSILON
 }

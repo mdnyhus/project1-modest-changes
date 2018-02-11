@@ -182,7 +182,6 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 	return nil
 }
 
-// TODO
 // Returns the full SvgString fro the given hash, if it exists on the longest
 // @param args *blockartlib.GetSvgStringArgs: contains the hash of the shape to be returned
 // @param reply *blockartlib.GetSvgStringReply: contains the shape string, and any internal errors
@@ -194,7 +193,7 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 	defer blockLock.Unlock()
 
 	// Iterate through headBlock searching for the shape.
-	// check https://piazza.com/class/jbyh5bsk4ez3cn?cid=425
+	// TODO check https://piazza.com/class/jbyh5bsk4ez3cn?cid=425
 	// to see if only
 	// 	a) checking locally, and
 	// 	b) checking only headBlock's chain
@@ -213,18 +212,22 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 	return nil
 }
 
-// TODO
 // Returns the amount of ink remaining for this miner, in pixels
 // @param args args *int: dummy argument that is not used
 // @param reply *uint32: amount of remaining ink, in pixels
 // @param err error: Any errors produced
 func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
-	// TODO - iterate through headBlock to calculate remaining ink
-	*reply = 0
+	// acquire currBlock's lock
+	// TODO - is this needed? it's read-only (is it?)
+	blockLock.Lock()
+	defer blockLock.Unlock()
+
+	minerIdentityHash := "" // TODO - get this from server/global vars
+
+	*reply = inkAvail(minerIdentityHash, currBlock)
 	return nil
 }
 
-// TODO
 // Deletes the shape associated with the passed shapeHash, if it exists and is owned by this miner.
 // args.ValidateNum specifies the number of blocks (no-op or op) that must follow the block with this
 // operation in the block-chain along the longest path before the operation can return successfully.
@@ -246,23 +249,36 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 	}
 
 	// TODO - wait until args.ValidateNum blocks have been added this block before returning
-	// TODO - get ink
 
-	reply.InkRemaining = 0
-	reply.Error = nil
-
-	return nil
+	// Get ink
+	var getInkArgs int
+	return l.GetInk(&getInkArgs, &reply.InkRemaining)
 }
 
-// TODO
 // Returns the shape hashes contained by the block in BlockHash
 // @param args *string: the blockHash
 // @param reply *blockartlib.GetShapesReply: contains the slice of shape hashes and any internal errors
 // @param err error: Any errors produced
 func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err error) {
-	// TODO - search for the block, construct a slice of hashes and return it
-	// For now, just return an InvalidBlockHashError
-	reply.Error = blockartlib.InvalidBlockHashError(*args)
+	// Search for block locally - if it does not exist, return an InvalidBlockHashError
+	// TODO - see if this is a valid assumption - check https://piazza.com/class/jbyh5bsk4ez3cn?cid=425
+	block, ok := blockTree[*args]
+	if !ok || block == nil {
+		// block does not exist locally
+		reply.Error = blockartlib.InvalidBlockHashError(*args)
+		return nil
+	}
+
+	for _, op := range block.ops {
+		// add op's hash to reply.ShapeHashes
+		hash := op.shapeHash
+		if op.shape != nil {
+			hash = op.shape.Hash
+		}
+		reply.ShapeHashes = append(reply.ShapeHashes, hash)
+	}
+
+	reply.Error = nil
 	return nil
 }
 
@@ -283,9 +299,21 @@ func (l *LibMin) GetGenesisBlock(args *int, reply *string) (err error) {
 // @param reply *blockartlib.GetChildrenReply: contains the slice of block hashes and any internal errors
 // @param err error: Any errors produced
 func (l *LibMin) GetChildren(args *string, reply *blockartlib.GetChildrenReply) (err error) {
-	// TODO - search for children whose parent is the passed BlockHash
-	// For now, just return an InvalidBlockHashError
-	reply.Error = blockartlib.InvalidBlockHashError(*args)
+	// First, see if block exists locally
+	if block, ok := blockTree[*args]; !ok || block == nil {
+		// block does not exist locally
+		reply.Error = blockartlib.InvalidBlockHashError(*args)
+		return nil
+	}
+
+	// If it exists, then just search for children whose parent is the passed BlockHash
+	for hash, block := range blockTree {
+		if block.prev == *args {
+			reply.BlockHashes = append(reply.BlockHashes, hash)
+		}
+	}
+
+	reply.Error = nil
 	return nil
 }
 
@@ -478,7 +506,7 @@ func crawlNoopHelper(block *Block, args interface{}, reply interface{}) (done bo
 // @return Block: The requested block, or nil if no block is found.
 func crawlChainHelperGetBlock(hash string) (block *Block) {
 	// Search locally.
-	if block = blockTree[hash]; block != nil {
+	if block, ok := blockTree[hash]; ok && block != nil {
 		return block
 	}
 

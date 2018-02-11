@@ -10,9 +10,9 @@ package blockartlib
 import "crypto/ecdsa"
 import (
 	"fmt"
-	"sync"
 	"net/rpc"
 	"os"
+	"sync"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -20,9 +20,9 @@ type ShapeType int
 
 const (
 	// Path shape.
-	PATH ShapeType = iota
-	EPSILON float64 = 0.000001
-	TRANSPARENT string = "transparent"
+	PATH        ShapeType = iota
+	EPSILON     float64   = 0.000001
+	TRANSPARENT string    = "transparent"
 	// Circle shape (extra credit).
 	// CIRCLE
 )
@@ -75,12 +75,12 @@ type Shape struct {
 	// TODO - put all fields except hash in sub struct, and hash only that
 	// (so no circular hashing)
 	// NOTE: this will require fixing all references to these variables
-	Svg string
-	Edges []Edge
-	FilledIn bool
-	FillColor string //todo: hex?
+	Svg         string
+	Edges       []Edge
+	FilledIn    bool
+	FillColor   string //todo: hex?
 	BorderColor string //todo: hex?
-	Ink uint32 //todo: are there different ink levels for different colors?
+	Ink         uint32 //todo: are there different ink levels for different colors?
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
