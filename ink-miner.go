@@ -470,7 +470,7 @@ func registerMinerToServer() error {
 	if err != nil {
 		return ServerConnectionError("resolve tcp error")
 	}
-	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr,Key: publicKey}
+	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
 	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		return ServerConnectionError("registration failure ")
@@ -480,7 +480,7 @@ func registerMinerToServer() error {
 
 /*
 	After registering with the server, the miner will ping the server every
-	interval / 2
+	specified interval / 2
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
@@ -491,6 +491,34 @@ func startHeartBeat() error {
 			return ServerConnectionError("heartbeat failure")
 		}
 	}
+	return nil
+}
+
+/*
+	TODO: checking errors -> can we see what errors the server returns
+	Request nodes from the server, will add a neighbouring ink miner , or throw a disconnected error
+	@return: Server disconnected errors for rpc failures
+*/
+func getNodes() error {
+	var neighbourAddresses *[]net.Addr
+	clientErr := serverConn.Call("RServer.GetNodes", &publicKey, &neighbourAddresses)
+	if clientErr != nil {
+		return ServerConnectionError("get nodes failure")
+	}
+
+	neighboursLock.Lock()
+	for _, address := range *neighbourAddresses {
+		inkMiner := InkMiner{}
+		client , err := rpc.Dial(address.Network(), address.String())
+		if err != nil {
+			// if we can not connect to a node, just try the next one
+			continue
+		}
+		inkMiner.conn = client
+		neighbours = append(neighbours, &inkMiner)
+	}
+	neighboursLock.Unlock()
+
 	return nil
 }
 
