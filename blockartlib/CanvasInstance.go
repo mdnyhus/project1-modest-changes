@@ -15,7 +15,6 @@ import (
 )
 
 type CanvasInstance struct {
-	canvasSettings CanvasSettings
 	minerAddr      string
 	privKey        ecdsa.PrivateKey
 	client         *rpc.Client
@@ -729,10 +728,10 @@ func getLengthOfEdge(edge Edge) float64 {
 // @return Edge
 func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 	var ret *Edge
-	for _, edge := range shape.Edges {
-		if edge.start.x == edge.end.x &&
-			edge.start.y == edge.end.y {
-			ret = &edge
+	for _, e := range shape.Edges {
+		if e.start.x == edge.end.x &&
+			e.start.y == edge.end.y {
+			ret = &e
 			return ret, nil
 		}
 	}
