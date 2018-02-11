@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"sync"
 	"net/rpc"
+	"os"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -20,7 +21,8 @@ type ShapeType int
 const (
 	// Path shape.
 	PATH ShapeType = iota
-
+	EPSILON float64 = 0.000001
+	TRANSPARENT string = "transparent"
 	// Circle shape (extra credit).
 	// CIRCLE
 )
@@ -59,15 +61,21 @@ type MinerNetSettings struct {
 }
 
 type Point struct {
-	x, y int
+	x, y float64
+}
+
+type Edge struct {
+	start, end Point
 }
 
 type Shape struct {
-	hash     string
-	svg      string
-	point    []Point
+	hash string
+	svg string
+	edges []Edge
 	filledIn bool
-	ink      int
+	fillColor string //todo: hex?
+	borderColor string //todo: hex?
+	ink int //todo: are there different ink levels for different colors?
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -198,84 +206,9 @@ type Canvas interface {
 	CloseCanvas() (inkRemaining uint32, err error)
 }
 
-// Canvas type that implements the Canvas interface
-type CanvasT struct {
-	minerAddr string
-	privKey ecdsa.PrivateKey
-	client *rpc.Client
-	settings CanvasSettings
-}
-
-func (canvas *CanvasT) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
-	// convert parameters to internal shape representation
-	shape, e := convertShape(shapeType, shapeSvgString, fill, stroke)
-	if e != nil {
-		// TODO - deal with any errors convertShape may produce
-		return shapeHash, blockHash, inkRemaining, e
-	}
-
-	args := &AddShapeArgs{
-		Shape: shape,
-		ValidateNum: validateNum}
-	var reply AddShapeReply
-	e = canvas.client.Call("LimMin.AddShape", args, &reply)
-	if reply.Error != nil {
-		return shapeHash, blockHash, inkRemaining, reply.Error
-	} else if e != nil {
-		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
-	}
-	
-	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
-}
-
-// TODO - merge conflict @Wesley @Justin
-// 	      I assume you've already written this function; please delete it and fix places that call this function
-// Can return the following errors:
-// - InvalidShapeSvgStringError
-// - ShapeSvgStringTooLongError
-func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shape Shape, err error) {
-	// TODO
-	return shape, nil
-}
-
-func (canvas *CanvasT) GetSvgString(shapeHash string) (svgString string, err error) {
-	// TODO
-	return "", nil
-}
-
-func (canvas *CanvasT) GetInk() (inkRemaining uint32, err error) {
-	// TODO
-	return 0, nil
-}
-
-func (canvas *CanvasT) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
-	// TODO
-	return 0, nil
-}
-
-func (canvas *CanvasT) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	// TODO
-	return nil, nil
-}
-
-func (canvas *CanvasT) GetGenesisBlock() (blockHash string, err error) {
-	// TODO
-	return "", nil
-}
-
-func (canvas *CanvasT) GetChildren(blockHash string) (blockHashes []string, err error) {
-	// TODO
-	return nil, nil
-}
-
-func (canvas *CanvasT) CloseCanvas() (inkRemaining uint32, err error) {
-	// TODO
-	return 0, nil
-}
-
 // OpenCanvas returns a singleton Canvas
 // Idea for singleton implementation based off https://stackoverflow.com/questions/1823286/singleton-in-go
-var canvasT *CanvasT
+var canvasT *CanvasInstance
 var once sync.Once
 
 // The constructor for a new Canvas object instance. Takes the miner's
@@ -289,9 +222,10 @@ var once sync.Once
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	// make thread-safe singleton intialization
+	// TODO
+	// For now return DisconnectedError
 	once.Do(func() {
-		canvasT = &CanvasT{}
+		canvasT = &CanvasInstance{}
 	})
 
 	canvasT.minerAddr = minerAddr
@@ -311,15 +245,12 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	return canvasT, setting, nil
 }
 
-// TODO
-// - calculates the amount of ink required to draw the shape, in pixels
-// @param shape *blockartlib.Shape: pointer to shape whose ink cost will be calculated
-// @return ink int: amount of ink required to draw the shape
-// @return error err: TODO
-func InkUsed(shape *Shape) (ink int, err error) {
-	ink = 0
-	// get border length of shape
-
-	return ink, nil
+//TODO - read block chain and make html file
+func PaintCanvas() {
+	htmlContent := []byte("hello\ngo\n")
+	current, _ := os.Getwd()
+	fileName := current + "/Canvas.html"
+	f, _ := os.Create(fileName)
+	f.Write(htmlContent)
+	f.Sync()
 }
-
