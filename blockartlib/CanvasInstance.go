@@ -45,69 +45,106 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		Shape:       *shape,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
-	err = canvas.client.Call("LimMin.AddShape", args, &reply)
-	if reply.Error != nil {
-		return shapeHash, blockHash, inkRemaining, reply.Error
-	} else if err != nil {
+	if err = canvas.client.Call("LimMin.AddShape", args, &reply); err != nil {
 		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
-	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
+
+	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, reply.Error
 }
 
 // Gets SVG string from the hashed shape
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error){
-	//TODO
-	return "" , nil
+	args := &GetSvgStringArgs{ShapeHash: shapeHash}
+	var reply GetSvgStringReply
+	if canvas.client.Call("LimMin.GetSvgString", args, &reply); err != nil {
+		return svgString, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.SvgString, reply.Error
 }
 
 // Gets ink remaining from canvas
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error){
-	//TODO
-	return  0 , nil
+	// args are not used for GetInk
+	var args int
+	var reply uint32
+	if canvas.client.Call("LimMin.GetInk", &args, &reply); err != nil {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply, nil
 }
 
 // Deletes shape from canvas and returns the new remaining ink count
 // @param canvas CanvasInstance
 // @return uint8, string
 func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
-	//TODO
-	return 0, nil
+	args := &DeleteShapeArgs{ValidateNum: validateNum, ShapeHash: shapeHash}
+	var reply DeleteShapeReply
+	if canvas.client.Call("LimMin.DeleteShape", args, &reply); err != nil {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.InkRemaining, reply.Error
 }
 
 // Gets the shapes' hashes from a hashed block
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error){
-	//TODO
-	return nil ,nil
+	var reply GetShapesReply
+	if canvas.client.Call("LimMin.GetShapes", &blockHash, &reply); err != nil {
+		return shapeHashes, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.ShapeHashes, reply.Error
 }
 
 // Gets the hash of the head block of the chain
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error){
-	//TODO
-	return "", nil
+	// args are not used for GetInk
+	var args int
+	var reply string
+	if canvas.client.Call("LimMin.GetGenesisBlock", &args, &reply); err != nil {
+		return blockHash, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply, nil
 }
 
 // Gets children of a block in hashed format
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string, err error) {
-	//TODO
-	return nil, nil
+	var reply GetChildrenReply
+	if canvas.client.Call("LimMin.GetChildren", &blockHash, &reply); err != nil {
+		return blockHashes, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.BlockHashes, reply.Error
 }
 
 // Close the canvas
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error){
-	//TODO
-	return 0, nil
+	// TODO - stop any future operations on this canvas object
+	// check https://piazza.com/class/jbyh5bsk4ez3cn?cid=428
+	
+	// get the ink remaining; args are not used for GetInk
+	var args int
+	var reply uint32
+	if canvas.client.Call("LimMin.GetInk", &args, &reply); err != nil {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply, nil
 }
 
 /*
