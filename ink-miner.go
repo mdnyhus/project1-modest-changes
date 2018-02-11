@@ -25,7 +25,7 @@ import (
 )
 
 // Static
-var canvasSettings blockartlib.CanvasSettings
+var canvasSettings balib.CanvasSettings
 var minConn int
 var n int // Num 0's required in POW
 
@@ -50,7 +50,7 @@ var address string
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
 type Op struct {
-	shape     *blockartlib.Shape // not nil iff adding shape
+	shape     *balib.Shape // not nil iff adding shape
 	shapeHash string // non-empty iff removing shape
 	owner     string // hash of pub/priv keys
 }
@@ -102,9 +102,8 @@ func (m *MinMin) NotifyNewOp(op *Op, reply *bool) (err error) {
 	return nil
 }
 
-// TODO RPC calls feel a bit burdensome here.
 // Receives block flood calls. Verifies chains. Updates head block if new chain is acknowledged.
-// LOCKS: Calls headBlockLock()
+// LOCKS: Acquires and releases headBlockLock
 // @param block *Block: Block which was added to chain.
 // @param reply *bool: Bool indicating success of RPC.
 // @return error: Any errors produced during new block processing.
@@ -120,7 +119,7 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 
 	for !isGenesis(*curr) {
 		// TODO: Verify ops.
-		if verifyHash(hashBlock(*curr)) {
+		if verifyBlock(*curr) {
 			len++
 			currBlock = getBlock(curr.prev)
 			if currBlock == nil {
@@ -168,18 +167,18 @@ type LibMin int
 
 // Returns the CanvasSettings
 // @param args int: required by Go's RPC; does nothing
-// @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
+// @param reply *balib.ConvasSettings: pointer to CanvasSettings that will be returned
 // @return error: Any errors produced
-func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) (err error) {
+func (l *LibMin) GetCanvasSettings(args int, reply *balib.CanvasSettings) (err error) {
 	*reply = canvasSettings
 	return nil
 }
 
 // Adds a new shape ot the canvas
-// @param args *blockartlib.AddShapeArgs: contains the shape to be added, and the validateNum
-// @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
+// @param args *balib.AddShapeArgs: contains the shape to be added, and the validateNum
+// @param reply *balib.AddShapeReply: pointer to AddShapeReply that will be returned
 // @return error: Any errors produced
-func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
+func (l *LibMin) AddShape(args *balib.AddShapeArgs, reply *balib.AddShapeReply) (err error) {
 	// construct Op for shape
 	op := Op{
 		shape: &args.Shape,
@@ -237,10 +236,47 @@ func hashBlock(block Block) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
+// Returns true if block is valid.
+// @param block Block: The block to be verified.
+// @return bool: Whether the block is valid.
+func verifyBlock(block Block) bool {
+	return verifyHash(hashBlock(block)) && verifyOps(block)
+}
+
+
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
+// @return bool: True iff valid.
 func verifyHash(hash string) bool {
 	return hash[len(hash)-n:] == strings.Repeat("0", n)
+}
+
+// Verifies that all ops are valid and no shape conflicts exist against blockchain canvas.
+// @param ops []Op: Slice of ops to verify.
+// @return bool: True iff valid.
+func verifyOps(block Block) bool {
+	for i, op := range block.ops {
+		if !verifyShape(op.shape) {
+			return false
+		}
+
+		// Ensure op does not conflict with previous ops.
+		for j := 0; j < i; j++ {
+			if jOp := block.ops[j]; op.owner != jOp.owner {
+				if balib.ShapesIntersect(op.Shape, jOp.Shape) {
+					return false
+				}
+			}
+		}
+	}
+}
+
+// Verifies Shape corresponds to SVG string.
+// @param shape Shape: The shape to verify.
+// @return bool: True iff valid.
+func verifyShape(shape Shape) bool {
+	parsedSvg, err := balib.ParseSvgPath(shape.svg)
+	return err != nil && *parsedSvg == shape && balib.isShapeInCanvas(shape)
 }
 
 // TODO this and floodBlock currentl share almost all the code. If worth it, call helper
@@ -276,6 +312,7 @@ func floodOp(op Op) {
 }
 
 // Sends block to all neighbours.
+// LOCKS: Acquires and releases neighboursLock.
 // @param block Block: Block to be broadcast.
 func floodBlock(block Block) {
 	// Prevent other processes from adding/removing neighbours.
@@ -363,18 +400,18 @@ func validateOp(op Op, headBlock *Block) (err error) {
 	if op.shape != nil {
 		// check if miner has enough ink only if op is owned by this miner
 		// and if shape is not being deleted
-		ink, err := blockartlib.InkUsed(op.shape)
+		ink, err := balib.InkUsed(op.shape)
 		inkAvail := inkAvail(op.owner, headBlock)
 		if err != nil || inkAvail < ink {
 			// not enough ink
-			return blockartlib.InsufficientInkError(inkAvail)
+			return balib.InsufficientInkError(inkAvail)
 		}
 	}
 
 	if op.shape != nil {
 		if hash := shapeOverlaps(op.shape, headBlock); hash != "" {
 			// op is adding a shape that intersects with an already present shape; reject
-			return blockartlib.ShapeOverlapError(hash)
+			return balib.ShapeOverlapError(hash)
 		}
 	}
 
@@ -394,26 +431,26 @@ func validateOp(op Op, headBlock *Block) (err error) {
 // Returned error is nil if shape is valid; otherwise, check the error
 // - TODO shape fill spec re. convex or self-intersections
 // - shape points are within the canvas
-// @param shape *blockartlib.Shape: pointer to shape that will be validated
+// @param shape *balib.Shape: pointer to shape that will be validated
 // @return err error: Error indicating if shape is valid. Can be nil or one 
 //                    of the following errors:
 // 						- OutOfBoundsError
-func validateShape(shape *blockartlib.Shape) (err error) {
+func validateShape(shape *balib.Shape) (err error) {
 	// TODO
-	return blockartlib.OutOfBoundsError{}
+	return balib.OutOfBoundsError{}
 }
 
 // TODO
 // - checks if the passed shape intersects with any shape currently on the canvas
 //   that is NOT owned by this miner, starting at headBlock
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param shape *blockartlib.Shape: pointer to shape that will be checked for 
+// @param shape *balib.Shape: pointer to shape that will be checked for 
 //                                  intersections
 // @param headBlock *Block: head block of chain from which ink will be calculated
 // @return shapeOverlapHash string: empty if shape does intersect with any other
 //                                  non-owned shape; otherwise it is the hash of 
 //                                  the shape this shape overlaps
-func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash string) {
+func shapeOverlaps(shape *balib.Shape, headBlock *Block) (shapeOverlapHash string) {
 	// TODO
 	return ""
 }
@@ -433,7 +470,7 @@ func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash
 //						- TODO - error if shape does not exist?
 func shapeExists(shapeHash string, ownder string, headBlock *Block) (err error) {
 	// TODO
-	return blockartlib.ShapeOwnerError(shapeHash)
+	return balib.ShapeOwnerError(shapeHash)
 }
 
 // TODO
