@@ -117,9 +117,8 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 	*reply = false
 
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
-	var iterArgs interface{}
-	var iterReply interface{}
-	if err := crawlChain(block, crawlNoopHelper, iterArgs, iterReply); err != nil {
+	var inter interface{}
+	if err := crawlChain(block, nil, inter, inter); err != nil {
 		return err
 	}
 
