@@ -183,15 +183,12 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 }
 
 // Returns the full SvgString for the given hash, if it exists locally, and even if it was later deleted
+// Will not search the currBlock, only valid created blocks (no operation in currBlock will have returned yet,
+// since validateNum >= 0, so those hashes will never be known to applications)
 // @param args *blockartlib.GetSvgStringArgs: contains the hash of the shape to be returned
 // @param reply *blockartlib.GetSvgStringReply: contains the shape string, and any internal errors
 // @param err error: Any errors produced
 func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockartlib.GetSvgStringReply) (err error) {
-	// acquire currBlock's lock
-	// TODO - is this needed? it's read-only (is it?)
-	blockLock.Lock()
-	defer blockLock.Unlock()
-
 	// Search for shape in set of local blocks
 	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 	// do not search externally; assume that any external blocks will get
