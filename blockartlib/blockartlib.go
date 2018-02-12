@@ -20,7 +20,7 @@ type ShapeType int
 
 const (
 	// Path shape.
-	PATH        ShapeType = iota
+	PATH        ShapeType = 1
 	EPSILON     float64   = 0.000001
 	TRANSPARENT string    = "transparent"
 	// Circle shape (extra credit).
@@ -241,7 +241,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
 
-	if err = canvasT.client.Call("LimMin.GetCanvasSettings", 0, &setting); err != nil {
+	if err = canvasT.client.Call("LibMin.GetCanvasSettings", 0, &setting); err != nil {
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
 

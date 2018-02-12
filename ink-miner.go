@@ -182,7 +182,7 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 	return nil
 }
 
-// Returns the full SvgString fro the given hash, if it exists on the longest
+// Returns the full SvgString for the given hash, if it exists locally, and even if it was later deleted
 // @param args *blockartlib.GetSvgStringArgs: contains the hash of the shape to be returned
 // @param reply *blockartlib.GetSvgStringReply: contains the shape string, and any internal errors
 // @param err error: Any errors produced
@@ -192,13 +192,11 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
-	// Iterate through headBlock searching for the shape.
-	// TODO check https://piazza.com/class/jbyh5bsk4ez3cn?cid=425
-	// to see if only
-	// 	a) checking locally, and
-	// 	b) checking only headBlock's chain
-	// is sufficient
-	shape := findShape(currBlock, args.ShapeHash)
+	// Search for shape in set of local blocks
+	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
+	// do not search externally; assume that any external blocks will get
+	// flooded to this miner soon.
+	shape := findShape(args.ShapeHash)
 	if shape != nil {
 		// shape does not exist, return InvalidShapeHashError
 		reply.Error = blockartlib.InvalidShapeHashError(args.ShapeHash)
@@ -239,7 +237,7 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 	op := Op{
 		shape:     nil,
 		shapeHash: args.ShapeHash,
-		owner:     "", // TODO - generate owner hash
+		owner:     "", // TODO -  get this from server/global vars
 	}
 
 	// receiveNewOp will try to add op to current block and flood op
@@ -256,12 +254,14 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 }
 
 // Returns the shape hashes contained by the block in BlockHash
+// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
+// do not search externally; assume that any external blocks will get
+// flooded to this miner soon.
 // @param args *string: the blockHash
 // @param reply *blockartlib.GetShapesReply: contains the slice of shape hashes and any internal errors
 // @param err error: Any errors produced
 func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err error) {
 	// Search for block locally - if it does not exist, return an InvalidBlockHashError
-	// TODO - see if this is a valid assumption - check https://piazza.com/class/jbyh5bsk4ez3cn?cid=425
 	block, ok := blockTree[*args]
 	if !ok || block == nil {
 		// block does not exist locally
@@ -295,6 +295,9 @@ func (l *LibMin) GetGenesisBlock(args *int, reply *string) (err error) {
 
 // TODO
 // Returns the shape hashes contained by the block in BlockHash
+// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
+// do not search externally; assume that any external blocks will get
+// flooded to this miner soon.
 // @param args *string: the blockHash
 // @param reply *blockartlib.GetChildrenReply: contains the slice of block hashes and any internal errors
 // @param err error: Any errors produced
@@ -328,83 +331,26 @@ func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
 	return nil
 }
 
-//////////////////////////////////////////////////////////////
-/* Structs and helper function for crawlChain for findShape */
-//////////////////////////////////////////////////////////////
-type findShapeCrawlArgs struct {
-	shapeHash string
-}
-
-type findShapeCrawlReply struct {
-	shape *blockartlib.Shape
-}
-
-// Checks the block for a shape with the passed args.shapeHash
-// If the shape was ever added, set reply.shape to the shape.
-// Also count how many times the shape was added
-// This function should be used when the default behaviour of crawlChain is sufficient
-// @param: block: block on which the function is called; does nothing
-// @param: args: a findShapeCrawlArgs contianing the shapeHash we're searching for
-// @param: reply: a findShapeCrawlReply that will contain the shape, if found
-// @return done bool: wehther the shape has been found (whether deleted or not, since the search is
-//                    done in both situations)
-// @return error: any errors encountered
-func findShapeCrawlHelper(block *Block, args interface{}, reply interface{}) (done bool, err error) {
-	crawlArgs, ok := args.(findShapeCrawlArgs)
-	if !ok {
-		// args is invalidl; return an error
-		return true, blockartlib.InvalidShapeHashError("")
-	}
-
-	crawlReply, ok := reply.(findShapeCrawlReply)
-	if !ok {
-		// reply is invalidl; return an error
-		return true, blockartlib.InvalidShapeHashError(crawlArgs.shapeHash)
-	}
-
-	// search through the block for the hash
-	for _, op := range block.ops {
-		if op.shapeHash == crawlArgs.shapeHash {
-			// shape was deleted in this block; shape hashes are unique, so this shape does not exist
-			crawlReply.shape = nil
-			return true, nil
-		}
-		if op.shape != nil && op.shape.Hash == crawlArgs.shapeHash {
-			// shape was added in this block
-			crawlReply.shape = op.shape
-			// keep searching through the block in case it is later deleted
-		}
-	}
-
-	if crawlReply.shape != nil {
-		return true, nil
-	}
-
-	// did not find the shape, continue searching
-	return false, nil
-}
-
-// Finds a shape in the chain starting at headBlock. If the shape was never added, or has been
-// removed, returned shape is nil; caller should interpret this as required
-// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param headBlock *Block: head block of chain that we will search
+// Searches for a shape in the set of local blocks with the given hash.
+// Note: this function does not care whether the shape was later deleted
 // @param shapeHash string: hash of shape that is being searched for
 // @return shape *blockartlib.Shape: found shape whose hash matches shapeHash; nil if it does not
 //                                   exist or was deleted
-func findShape(headBLock *Block, shapeHash string) (shape *blockartlib.Shape) {
-	// the crawl by default does all the work we need, so no special helper/args/reply is required
-	args := &findShapeCrawlArgs{shapeHash: shapeHash}
-	var reply findShapeCrawlReply
-	if err := crawlChain(headBLock, findShapeCrawlHelper, args, &reply); err != nil {
-		// error while searching
-		return nil
-	}
-	if reply.shape == nil {
-		// shape was not found
-		return nil
+func findShape(shapeHash string) (shape *blockartlib.Shape) {
+	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	for _, block := range blockTree {
+		// search through the block, searching for the add op for a shape with this hash
+		for _, op := range block.ops {
+			if op.shape != nil && op.shape.Hash == shapeHash {
+				// shape was found
+				return op.shape
+				// keep searching through the block in case it is later deleted
+			}
+		}
 	}
 
-	return reply.shape
+	// shape was not found
+	return nil
 }
 
 // Runs the passed function on each element in the blockchain (including the headBlock),
@@ -477,8 +423,8 @@ func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) (boo
 
 	// Blocks are valid, so now run the function on each block in the chain,
 	// starting from the headBlock.
-	for i := 0; i < len(chain); i++ {
-		done, err := fn(chain[i], args, reply)
+	for _, block := range chain {
+		done, err := fn(block, args, reply)
 		if err != nil || done {
 			// if fn is done, or there is an error, return
 			return err
@@ -784,13 +730,13 @@ type inkAvailCrawlReply struct {
 func inkAvailCrawlHelper(block *Block, args interface{}, reply interface{}) (done bool, err error) {
 	crawlArgs, ok := args.(inkAvailCrawlArgs)
 	if !ok {
-		// args is invalidl; return an error
+		// args is invalid; return an error
 		return true, blockartlib.DisconnectedError("")
 	}
 
 	crawlReply, ok := reply.(inkAvailCrawlReply)
 	if !ok {
-		// reply is invalidl; return an error
+		// reply is invalid; return an error
 		return true, blockartlib.DisconnectedError("")
 	}
 

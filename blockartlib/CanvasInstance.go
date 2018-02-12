@@ -44,7 +44,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		Shape:       *shape,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
-	if err = canvas.client.Call("LimMin.AddShape", args, &reply); err != nil {
+	if err = canvas.client.Call("LibMin.AddShape", args, &reply); err != nil {
 		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -57,7 +57,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error) {
 	args := &GetSvgStringArgs{ShapeHash: shapeHash}
 	var reply GetSvgStringReply
-	if canvas.client.Call("LimMin.GetSvgString", args, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetSvgString", args, &reply); err != nil {
 		return svgString, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -71,7 +71,7 @@ func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
 	// args are not used for GetInk
 	var args int
 	var reply uint32
-	if canvas.client.Call("LimMin.GetInk", &args, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetInk", &args, &reply); err != nil {
 		return inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -84,7 +84,7 @@ func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
 func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
 	args := &DeleteShapeArgs{ValidateNum: validateNum, ShapeHash: shapeHash}
 	var reply DeleteShapeReply
-	if canvas.client.Call("LimMin.DeleteShape", args, &reply); err != nil {
+	if canvas.client.Call("LibMin.DeleteShape", args, &reply); err != nil {
 		return inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -96,7 +96,7 @@ func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (i
 // @return []string, error
 func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error) {
 	var reply GetShapesReply
-	if canvas.client.Call("LimMin.GetShapes", &blockHash, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetShapes", &blockHash, &reply); err != nil {
 		return shapeHashes, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -107,10 +107,8 @@ func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, 
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
-	// args are not used for GetInk
-	var args int
 	var reply string
-	if canvas.client.Call("LimMin.GetGenesisBlock", &args, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetGenesisBlock", nil, &reply); err != nil {
 		return blockHash, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -122,7 +120,7 @@ func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
 // @return []string, error
 func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string, err error) {
 	var reply GetChildrenReply
-	if canvas.client.Call("LimMin.GetChildren", &blockHash, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetChildren", &blockHash, &reply); err != nil {
 		return blockHashes, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -136,10 +134,9 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
 	// TODO - stop any future operations on this canvas object
 	// check https://piazza.com/class/jbyh5bsk4ez3cn?cid=428
 
-	// get the ink remaining; args are not used for GetInk
-	var args int
+	// get the ink remaining
 	var reply uint32
-	if canvas.client.Call("LimMin.GetInk", &args, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetInk", nil, &reply); err != nil {
 		return inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -168,7 +165,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	shape.FilledIn = strings.ToLower(fill) != TRANSPARENT
 	shape.FillColor = fill
 	shape.BorderColor = stroke
-	// TODO -
+	// TODO - add timestamp
 	shape.Hash = hashShape(*shape)
 	return shape, nil
 }
