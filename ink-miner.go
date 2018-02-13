@@ -28,7 +28,6 @@ import (
 )
 
 // Static
-var canvasSettings blockartlib.CanvasSettings
 var publicKey ecdsa.PublicKey
 var privateKey ecdsa.PrivateKey
 
@@ -173,7 +172,8 @@ type LibMin int
 // @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
 // @return error: Any errors produced
 func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) (err error) {
-	*reply = canvasSettings
+	canvasSettings := minerNetSettings.CanvasSettings
+	*reply = blockartlib.CanvasSettings{CanvasXMax:canvasSettings.CanvasXMax, CanvasYMax:canvasSettings.CanvasYMax}
 	return nil
 }
 
