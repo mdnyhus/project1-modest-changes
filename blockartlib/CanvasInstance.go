@@ -44,69 +44,103 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		Shape:       *shape,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
-	err = canvas.client.Call("LimMin.AddShape", args, &reply)
-	if reply.Error != nil {
-		return shapeHash, blockHash, inkRemaining, reply.Error
-	} else if err != nil {
+	if err = canvas.client.Call("LibMin.AddShape", args, &reply); err != nil {
 		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
-	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, nil
+
+	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, reply.Error
 }
 
 // Gets SVG string from the hashed shape
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error) {
-	//TODO
-	return "", nil
+	args := &GetSvgStringArgs{ShapeHash: shapeHash}
+	var reply GetSvgStringReply
+	if canvas.client.Call("LibMin.GetSvgString", args, &reply); err != nil {
+		return svgString, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.SvgString, reply.Error
 }
 
 // Gets ink remaining from canvas
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
-	//TODO
-	return 0, nil
+	// args are not used for GetInk
+	var args int
+	var reply uint32
+	if canvas.client.Call("LibMin.GetInk", &args, &reply); err != nil {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply, nil
 }
 
 // Deletes shape from canvas and returns the new remaining ink count
 // @param canvas CanvasInstance
 // @return uint8, string
 func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
-	//TODO
-	return 0, nil
+	args := &DeleteShapeArgs{ValidateNum: validateNum, ShapeHash: shapeHash}
+	var reply DeleteShapeReply
+	if canvas.client.Call("LibMin.DeleteShape", args, &reply); err != nil {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.InkRemaining, reply.Error
 }
 
 // Gets the shapes' hashes from a hashed block
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error) {
-	//TODO
-	return nil, nil
+	var reply GetShapesReply
+	if canvas.client.Call("LibMin.GetShapes", &blockHash, &reply); err != nil {
+		return shapeHashes, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.ShapeHashes, reply.Error
 }
 
 // Gets the hash of the head block of the chain
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
-	//TODO
-	return "", nil
+	var reply string
+	if canvas.client.Call("LibMin.GetGenesisBlock", nil, &reply); err != nil {
+		return blockHash, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply, nil
 }
 
 // Gets children of a block in hashed format
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string, err error) {
-	//TODO
-	return nil, nil
+	var reply GetChildrenReply
+	if canvas.client.Call("LibMin.GetChildren", &blockHash, &reply); err != nil {
+		return blockHashes, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply.BlockHashes, reply.Error
 }
 
 // Close the canvas
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
-	//TODO
-	return 0, nil
+	// TODO - stop any future operations on this canvas object
+	// check https://piazza.com/class/jbyh5bsk4ez3cn?cid=428
+
+	// get the ink remaining
+	var reply uint32
+	if canvas.client.Call("LibMin.GetInk", nil, &reply); err != nil {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	return reply, nil
 }
 
 /*
@@ -127,11 +161,12 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 			return nil, err
 		}
 	}
-	shape.svg = shapeSvgString
-	shape.filledIn = strings.ToLower(fill) != TRANSPARENT
-	shape.fillColor = fill
-	shape.borderColor = stroke
-	shape.hash = hashShape(*shape)
+	shape.Svg = shapeSvgString
+	shape.FilledIn = strings.ToLower(fill) != TRANSPARENT
+	shape.FillColor = fill
+	shape.BorderColor = stroke
+	// TODO - add timestamp
+	shape.Hash = hashShape(*shape)
 	return shape, nil
 }
 
@@ -171,7 +206,7 @@ func svgToShape(svgString string) (*Shape, error) {
 func isShapeInCanvas(shape Shape) bool {
 	canvasXMax := float64(canvasT.settings.CanvasXMax)
 	canvasYMax := float64(canvasT.settings.CanvasYMax)
-	for _, edge := range shape.edges {
+	for _, edge := range shape.Edges {
 		if edge.start.x < 0 || edge.start.y < 0 || edge.end.x < 0 || edge.end.y < 0 {
 			return false
 		}
@@ -348,7 +383,7 @@ func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, ca
 	}
 
 	edge := Edge{*currentPoint, endPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 	*currentPoint = endPoint
 	return nil
 }
@@ -375,7 +410,7 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) e
 		endPoint = Point{currentPoint.x, currentPoint.y + valY}
 	}
 	edge := Edge{*currentPoint, endPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 	*currentPoint = endPoint
 	return nil
 }
@@ -401,7 +436,7 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) e
 		endPoint = Point{currentPoint.x + valX, currentPoint.y}
 	}
 	edge := Edge{*currentPoint, endPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 	*currentPoint = endPoint
 	return nil
 }
@@ -416,23 +451,24 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) e
 
 func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
 	edge := Edge{*currentPoint, *startPoint}
-	shape.edges = append(shape.edges, edge)
+	shape.Edges = append(shape.Edges, edge)
 }
 
 // - calculates the amount of ink required to draw the shape, in pixels
 // @param shape *Shape: pointer to shape whose ink cost will be calculated
 // @return ink int: amount of ink required to draw the shape
 // @return error err
-func InkUsed(shape *Shape) (ink int, err error) {
+func InkUsed(shape *Shape) (ink uint32, err error) {
 	var floatInk float64 = 0
 	// get border length of shape - just add all the edges up!
 	var edgeLength float64 = 0
-	for _, edge := range shape.edges {
+	for _, edge := range shape.Edges {
 		edgeLength += getLengthOfEdge(edge)
 	}
 	// since ink is an int, floor the edge lengths
+	// TODO - why are we flooring it here?
 	floatInk += math.Floor(edgeLength)
-	if shape.filledIn {
+	if shape.FilledIn {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
@@ -440,11 +476,12 @@ func InkUsed(shape *Shape) (ink int, err error) {
 		area, err := getAreaOfShape(shape)
 		if err != nil {
 			floatInk += area
+			// TODO - is this not double counting the ink?
 		} else {
 			return 0, err
 		}
 	}
-	ink = int(floatInk)
+	ink = uint32(floatInk)
 	return ink, nil
 }
 
@@ -455,7 +492,7 @@ func InkUsed(shape *Shape) (ink int, err error) {
 // @return int
 func getAreaOfShape(shape *Shape) (float64, error) {
 	// https://www.mathopenref.com/coordpolygonarea.html
-	var start Edge = shape.edges[0]
+	var start Edge = shape.Edges[0]
 	var area float64 = getCrossProduct(start.start, start.end)
 	current, err := findNextEdge(shape, start)
 	if err != nil {
@@ -477,20 +514,20 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 // @return bool
 func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	//1. First find if there's an intersection between the edges of the two polygons.
-	for _, edgeA := range A.edges {
-		for _, edgeB := range B.edges {
+	for _, edgeA := range A.Edges {
+		for _, edgeB := range B.Edges {
 			if EdgesIntersect(edgeA, edgeB) {
 				return true
 			}
 		}
 	}
 	//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-	pointA := A.edges[0].start
+	pointA := A.Edges[0].start
 	if pointInShape(pointA, B, canvasSettings) {
 		return true
 	}
 	//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-	pointB := B.edges[0].start
+	pointB := B.Edges[0].start
 	if pointInShape(pointB, A, canvasSettings) {
 		return true
 	}
@@ -585,7 +622,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	var edge = Edge{start: point, end: Point{x: extendedX, y: point.y}}
 	// if this edge passes through an odd number of edges, the point is in shape
 	intersections := 0
-	for _, e := range shape.edges {
+	for _, e := range shape.Edges {
 		if EdgesIntersect(edge, e) {
 			intersections++
 		}
@@ -627,7 +664,7 @@ func getLengthOfEdge(edge Edge) float64 {
 // @return Edge
 func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 	var ret *Edge
-	for _, edge := range shape.edges {
+	for _, edge := range shape.Edges {
 		if edge.start.x == edge.end.x &&
 			edge.start.y == edge.end.y {
 			ret = &edge
