@@ -333,8 +333,8 @@ func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) erro
 
 	// Blocks are valid, so now run the function on each block in the chain,
 	// starting from the headBlock.
-	for i := 0; i < len(chain); i++ {
-		if err = fn(chain[i], args, reply); err != nil {
+	for _, block := range chain {
+		if err = fn(block, args, reply); err != nil {
 			// if an error is encountered, return it
 			return err
 		}
@@ -387,8 +387,16 @@ func crawlChainHelperGetBlock(hash string) (block *Block) {
 //                        (and thus the last block should be the Genesis block)
 // @return err error: any errors from validation; nil if block is valid
 func validateBlock(chain []*Block) (err error) {
-	// TODO
-	return nil
+	// Traversing slice `chain` from front->back is equivalent to
+	// traversing block chain from genesis->headBlock.
+	for _, block := range chain {
+		if err = verifyHash(hashBlock(block)); err != nil {
+			return err
+		}
+		if err = verifyOps(block); err != nil {
+			return err
+		}
+	}
 }
 
 // Returns true if block is the genesis block.
@@ -427,6 +435,7 @@ func verifyHash(hash string) bool {
 // @param ops []Op: Slice of ops to verify.
 // @return bool: True iff valid.
 func verifyOps(block Block) bool {
+	verificationChan := make(chan error, 1)
 	for i, op := range block.ops {
 		if !verifyShape(op.shape) {
 			return false
@@ -438,6 +447,44 @@ func verifyOps(block Block) bool {
 				if balib.ShapesIntersect(op.Shape, jOp.Shape) {
 					return false
 				}
+			}
+		}
+		go verifyOp(op, blockTree[block.prev], verificationChan)
+	}
+
+	pendingVerifications := len(block.ops)
+	for pendingVerifications != 0 {
+		err := <-verificationChan
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Verifies an op against all previous ops in the blockchain. Assumes all previous blocks in chain are valid.
+// @param candidateOp Op: The op to verify.
+// @param block *Block: The headBlock on which to begin the verification.
+// @param ch chan<-error: The channel to which verification errors are piped into, or nil if no errors are found.
+func verifyOp(candidateOp Op, block *Block, ch chan<-error) {
+	if svg := candidateOp.shape.svg; balib.isSvgTooLong(svg) {
+		ch <- balib.ShapeSvgStringTooLongError(svg)
+		return
+	}
+	
+	if !balib.isShapeInCanvas(op.shape) {
+		ch <- balib.OutOfBoundsError(op.shape)
+		return
+	}
+
+	
+
+
+	for _, op := range block.ops {
+		if candidateOp.owner != op.owner {
+			if balid.ShapesIntersect(candidateOp.Shape, op.Shape) {
+				ch <- balib.ShapeOverlapError(op.Shape.hash)
 			}
 		}
 	}
