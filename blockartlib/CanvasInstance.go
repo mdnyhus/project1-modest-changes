@@ -151,7 +151,7 @@ func isSvgTooLong(svgString string) bool {
 */
 func svgToShape(svgString string) (*Shape, error) {
 	if isSvgTooLong(svgString) {
-		return nil, ShapeSvgStringTooLongError(fmt.Sprintf("%s has too many characters", svgString))
+		return nil, ShapeSvgStringTooLongError(svgString)
 	}
 	shape, err := ParseSvgPath(svgString)
 	if err != nil {
