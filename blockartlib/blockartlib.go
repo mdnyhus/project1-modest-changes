@@ -10,9 +10,9 @@ package blockartlib
 import "crypto/ecdsa"
 import (
 	"fmt"
-	"sync"
 	"net/rpc"
 	"os"
+	"sync"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -20,9 +20,9 @@ type ShapeType int
 
 const (
 	// Path shape.
-	PATH ShapeType = iota
-	EPSILON float64 = 0.000001
-	TRANSPARENT string = "transparent"
+	PATH        ShapeType = 1
+	EPSILON     float64   = 0.000001
+	TRANSPARENT string    = "transparent"
 	// Circle shape (extra credit).
 	// CIRCLE
 )
@@ -69,13 +69,18 @@ type Edge struct {
 }
 
 type Shape struct {
-	hash string
-	svg string
-	edges []Edge
-	filledIn bool
-	fillColor string //todo: hex?
-	borderColor string //todo: hex?
-	ink int //todo: are there different ink levels for different colors?
+	// TODO - Hash should be unique even for identical shapes - use a timestamp
+	Hash string
+	// TODO - add timestamp field, and use this to hash
+	// TODO - put all fields except hash in sub struct, and hash only that
+	// (so no circular hashing)
+	// NOTE: this will require fixing all references to these variables
+	Svg         string
+	Edges       []Edge
+	FilledIn    bool
+	FillColor   string //todo: hex?
+	BorderColor string //todo: hex?
+	Ink         uint32 //todo: are there different ink levels for different colors?
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -236,7 +241,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
 
-	if err = canvasT.client.Call("LimMin.GetCanvasSettings", 0, &setting); err != nil {
+	if err = canvasT.client.Call("LibMin.GetCanvasSettings", 0, &setting); err != nil {
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
 
