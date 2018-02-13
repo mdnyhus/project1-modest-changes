@@ -700,6 +700,11 @@ func getNodes() error {
 	return nil
 }
 
+/*
+	Checks to see if miner has greater than min number of connections
+	@return: Returns true if the miner has enough neighbours
+*/
+
 func hasEnoughNeighbours() bool {
 	hasEnough := false
 	neighboursLock.Lock()
