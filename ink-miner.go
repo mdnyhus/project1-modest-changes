@@ -414,8 +414,8 @@ func validateBlock(chain []*Block) (err error) {
 // @param block Block: The block to test against.
 // @return bool: True iff block is genesis block.
 func isGenesis(block Block) bool {
-	// TODO: def'n of Genesis block?
-	return block.prev == ""
+	// TODO: def'n of Genesis block? ---> Is this the proper hash
+	return block.prev == "" && hashBlock(block) == minerNetSettings.GenesisBlockHash
 }
 
 // Returns hash of block.
