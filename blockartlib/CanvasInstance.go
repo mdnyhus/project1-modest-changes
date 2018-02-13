@@ -608,6 +608,7 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 
 // Checks if the two lines (B represented by its endpoints)
 // only intersect at one of its tips. Private helper function for EdgesIntersect.
+// ASSUME only used for parallel lines (only used in this context in caller)
 // @param A Edge
 // @param pointB1 Point
 // @param pointB2 Point
