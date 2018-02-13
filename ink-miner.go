@@ -49,7 +49,7 @@ var serverConn *rpc.Client
 var address string
 
 // Network Instructions
-var minerNetSettings rpcCommunication.MinerNetSettings
+var minerNetSettings *rpcCommunication.MinerNetSettings
 
 // FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
@@ -100,6 +100,18 @@ type KeyParseError string
 
 func (e KeyParseError) Error() string {
 	return fmt.Sprintf("InkMiner: Could not connect to server for %s", string(e))
+}
+
+type GensisBlockNotFound string
+
+func (e GensisBlockNotFound) Error() string {
+	return fmt.Sprintf("InkMiner: Could not find gensis block for %s", string(e))
+}
+
+type MinerSettingNotFound string
+
+func (e MinerSettingNotFound) Error() string {
+	return fmt.Sprintf("InkMiner: Could not find gensis block for %s", string(e))
 }
 
 // Receives op block flood calls. Verifies the op, which will add the op to currBlock and flood
@@ -172,8 +184,11 @@ type LibMin int
 // @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
 // @return error: Any errors produced
 func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) (err error) {
+	if minerNetSettings == nil {
+		return MinerSettingNotFound("miner could not find a network setting")
+	}
 	canvasSettings := minerNetSettings.CanvasSettings
-	*reply = blockartlib.CanvasSettings{CanvasXMax:canvasSettings.CanvasXMax, CanvasYMax:canvasSettings.CanvasYMax}
+	*reply = blockartlib.CanvasSettings{CanvasXMax: canvasSettings.CanvasXMax, CanvasYMax:canvasSettings.CanvasYMax}
 	return nil
 }
 
@@ -297,14 +312,15 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 	return nil
 }
 
-// TODO
 // Returns the hash of the genesis block of the block chain
 // @param args args *int: dummy argument that is not used
 // @param reply *uint32: hash of genesis block
 // @param err error: Any errors produced
 func (l *LibMin) GetGenesisBlock(args *int, reply *string) (err error) {
-	// TODO
-	*reply = ""
+	if minerNetSettings.GenesisBlockHash == "" {
+		return GensisBlockNotFound("can not get geneis block")
+	}
+	*reply = minerNetSettings.GenesisBlockHash
 	return nil
 }
 
@@ -827,7 +843,7 @@ func registerMinerToServer() error {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", &minerSettings, minerNetSettings)
 	if clientErr != nil {
 		return ServerConnectionError("registration failure ")
 	}
