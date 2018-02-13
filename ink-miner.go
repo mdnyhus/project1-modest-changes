@@ -13,7 +13,10 @@ package main
 
 import (
 	"./blockartlib"
+	"./proj1-server/rpcCommunication"
+	"crypto/ecdsa"
 	"crypto/md5"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -22,9 +25,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"./proj1-server/rpcCommunication"
-	"crypto/ecdsa"
-	"crypto/x509"
 )
 
 // Static
@@ -687,7 +687,7 @@ func getNodes() error {
 	neighboursLock.Lock()
 	for _, address := range *neighbourAddresses {
 		inkMiner := InkMiner{}
-		client , err := rpc.Dial(address.Network(), address.String())
+		client, err := rpc.Dial(address.Network(), address.String())
 		if err != nil {
 			// if we can not connect to a node, just try the next one
 			continue
@@ -698,6 +698,16 @@ func getNodes() error {
 	neighboursLock.Unlock()
 
 	return nil
+}
+
+func hasEnoughNeighbours() bool {
+	hasEnough := false
+	neighboursLock.Lock()
+	if len(neighbours) >= int(minerNetSettings.MinNumMinerConnections) {
+		hasEnough = true
+	}
+	neighboursLock.Unlock()
+	return hasEnough
 }
 
 func main() {
@@ -728,7 +738,7 @@ func main() {
 		return
 	}
 
-	parsedPrivateKey , err := x509.ParseECPrivateKey([]byte(args[2]))
+	parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
 	if err != nil {
 		// can't proceed without a proper private key
 		fmt.Printf("miner needs a valid private key")
