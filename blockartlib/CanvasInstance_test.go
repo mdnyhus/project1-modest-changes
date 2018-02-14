@@ -110,9 +110,10 @@ func TestSvgIsInCanvas(t *testing.T) {
 }
 
 func TestInkUsed(t *testing.T) {
-	// Case 1: An open shape
+	// Case 1a: An open shape with a border
 	var shape = Shape{}
 	shape.FilledIn = false
+	shape.BorderColor = "red"
 	shape.Edges = []Edge{Edge{start:Point{0,0}, end:Point{10,0}},
 						Edge{start:Point{10,0}, end:Point{10,10}},
 						Edge{start:Point{10,10}, end:Point{0,10}}}
@@ -123,8 +124,15 @@ func TestInkUsed(t *testing.T) {
 	if ink != 30 {
 		t.Errorf("Expected 30 units of ink, used %d \n", ink)
 	}
-	// Case 2: A closed shape, no fill
+	// Case 1b: An open shape with no border and no fill
+	shape.BorderColor = TRANSPARENT
+	ink, err = InkUsed(&shape)
+	if err == nil {
+		t.Errorf("Expected error, received %d ink used\n", ink)
+	}
+	// Case 2: A closed shape, no fill, with a border
 	shape.Edges = append(shape.Edges, Edge{start:Point{0,10}, end:Point{0,0}})
+	shape.BorderColor = "red"
 	ink, err = InkUsed(&shape)
 	if err != nil {
 		t.Errorf("Received error %v \n", err)
@@ -132,9 +140,17 @@ func TestInkUsed(t *testing.T) {
 	if ink != 40 {
 		t.Errorf("Expected 40 units of ink, used %d \n", ink)
 	}
-	// Case 3: A closed shape, filled
-	// Check double-counting
+	// Case 3a: A closed shape, filled, with border
 	shape.FilledIn = true
+	ink, err = InkUsed(&shape)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 140 {
+		t.Errorf("Expected 140 units of ink, used %d \n", ink)
+	}
+	// Case 3b: A closed shape, filled, with no border
+	shape.BorderColor = TRANSPARENT
 	ink, err = InkUsed(&shape)
 	if err != nil {
 		t.Errorf("Received error %v \n", err)
@@ -142,8 +158,9 @@ func TestInkUsed(t *testing.T) {
 	if ink != 100 {
 		t.Errorf("Expected 100 units of ink, used %d \n", ink)
 	}
-	// Case 4: Self-intersecting shape, no fill
+	// Case 4: Self-intersecting shape, no fill, with border
 	shape.FilledIn = false
+	shape.BorderColor = "red"
 	shape.Edges = append(shape.Edges, Edge{start:Point{0,0}, end:Point{10,10}})
 	shape.Edges = append(shape.Edges, Edge{start:Point{10,0}, end:Point{0,10}})
 	ink, err = InkUsed(&shape)

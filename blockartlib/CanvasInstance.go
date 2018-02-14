@@ -465,6 +465,9 @@ func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
 // @return error err
 func InkUsed(shape *Shape) (ink uint32, err error) {
 	var floatInk float64 = 0
+	if !shape.FilledIn && shape.BorderColor == TRANSPARENT {
+		return 0, errors.New("Can't have transparent stroke and transparent fill")
+	}
 	if shape.FilledIn {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
@@ -479,13 +482,14 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		if !isSimpleShape(shape) {
 			return 0, errors.New("Can't have non-transparent ink if shape has self-intersecting edges")
 		}
-	} else {
+	}
+	if shape.BorderColor != TRANSPARENT {
 		// get border length of shape - just add all the edges up!
 		var edgeLength float64 = 0
 		for _, edge := range shape.Edges {
 			edgeLength += getLengthOfEdge(edge)
 		}
-		floatInk = edgeLength
+		floatInk += edgeLength
 	}
 	ink = uint32(floatInk)
 	return ink, nil
