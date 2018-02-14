@@ -7,12 +7,13 @@ library (blockartlib) to be used in project 1 of UBC CS 416 2017W2.
 
 package blockartlib
 
-import "crypto/ecdsa"
 import (
 	"fmt"
 	"net/rpc"
 	"os"
 	"sync"
+	"time"
+	"crypto/ecdsa"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -68,15 +69,17 @@ type Edge struct {
 	start, end Point
 }
 
-type Shape struct {
-	// TODO - Hash should be unique even for identical shapes - use a timestamp
+type Edges []Edge
+
+type ShapeMeta struct {
 	Hash string
-	// TODO - add timestamp field, and use this to hash
-	// TODO - put all fields except hash in sub struct, and hash only that
-	// (so no circular hashing)
-	// NOTE: this will require fixing all references to these variables
+	Shape Shape
+}
+
+type Shape struct {
+	Timestamp   time.Time
 	Svg         string
-	Edges       []Edge
+	Edges       Edges
 	FilledIn    bool
 	FillColor   string //todo: hex?
 	BorderColor string //todo: hex?
@@ -136,14 +139,7 @@ func (e ShapeOwnerError) Error() string {
 	return fmt.Sprintf("BlockArt: Shape owned by someone else [%s]", string(e))
 }
 
-// Empty
-type OutOfBoundsError struct{}
-
-func (e OutOfBoundsError) Error() string {
-	return fmt.Sprintf("BlockArt: Shape is outside the bounds of the canvas")
-}
-
-// Contains the hash of the shape that this shape overlaps with.
+// Contains the bad shape hash of the shape that this shape overlaps with.
 type ShapeOverlapError string
 
 func (e ShapeOverlapError) Error() string {
@@ -155,6 +151,13 @@ type InvalidBlockHashError string
 
 func (e InvalidBlockHashError) Error() string {
 	return fmt.Sprintf("BlockArt: Invalid block hash [%s]", string(e))
+}
+
+// Empty
+type OutOfBoundsError struct{}
+
+func (e OutOfBoundsError) Error() string {
+	return fmt.Sprintf("BlockArt: Shape is outside the bounds of the canvas")
 }
 
 // </ERROR DEFINITIONS>
@@ -259,3 +262,33 @@ func PaintCanvas() {
 	f.Write(htmlContent)
 	f.Sync()
 }
+
+func (e Edges) Len() int {
+	return len(e)
+}
+
+func (e Edges) Swap(i, j int) {
+	e[i], e[j] = e[j], e[i]
+}
+
+func (e Edges) Less(i, j int) bool {
+	isx := e[i].start.x
+	isy := e[i].start.y
+	iex := e[i].end.x
+	iey := e[i].end.y
+	jsx := e[j].start.x
+	jsy := e[j].start.y
+	jex := e[j].end.x
+	jey := e[j].end.y
+	
+	if isx != jsx {
+		return isx < jsx
+	} else if isy != jsy {
+		return isx < jsy
+	} else if iex != jex {
+		return iex < jex
+	}
+
+	return iey < jey
+}
+

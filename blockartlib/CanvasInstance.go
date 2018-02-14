@@ -1,9 +1,11 @@
 package blockartlib
 
 import (
+	"sort"
 	"crypto/ecdsa"
 	"crypto/md5"
 	"encoding/hex"
+	"time"
 	"errors"
 	"fmt"
 	"math"
@@ -40,15 +42,18 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		return shapeHash, blockHash, inkRemaining, err
 	}
 
+	hash := HashShape(*shape)
+	shapeMeta := ShapeMeta{Hash: hash, Shape: *shape}
+
 	args := &AddShapeArgs{
-		Shape:       *shape,
+		ShapeMeta:       shapeMeta,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
 	if err = canvas.client.Call("LibMin.AddShape", args, &reply); err != nil {
-		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
+		return hash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
-	return reply.ShapeHash, reply.BlockHash, reply.InkRemaining, reply.Error
+	return hash, reply.BlockHash, reply.InkRemaining, reply.Error
 }
 
 // Gets SVG string from the hashed shape
@@ -165,8 +170,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	shape.FilledIn = strings.ToLower(fill) != TRANSPARENT
 	shape.FillColor = fill
 	shape.BorderColor = stroke
-	// TODO - add timestamp
-	shape.Hash = hashShape(*shape)
+	shape.Timestamp = time.Now()
 	return shape, nil
 }
 
@@ -175,7 +179,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	@param: svg path string
 	@returns: true if string is too long, false otherwise
 */
-func isSvgTooLong(svgString string) bool {
+func IsSvgTooLong(svgString string) bool {
 	return len(svgString) > MAX_SVG_LENGTH
 }
 
@@ -185,15 +189,15 @@ func isSvgTooLong(svgString string) bool {
 	@return: shape that is parsed with the internal struct or error otherwise
 */
 func svgToShape(svgString string) (*Shape, error) {
-	if isSvgTooLong(svgString) {
+	if IsSvgTooLong(svgString) {
 		return nil, ShapeSvgStringTooLongError(svgString)
 	}
 	shape, err := ParseSvgPath(svgString)
 	if err != nil {
 		return nil, err
 	}
-	if !isShapeInCanvas(shape) {
-		return nil, OutOfBoundsError{}
+	if !IsShapeInCanvas(*shape) {
+		return nil, InvalidShapeSvgStringError(svgString)
 	}
 	return shape, err
 }
@@ -203,7 +207,7 @@ func svgToShape(svgString string) (*Shape, error) {
 	@param: takes a shape assembled from the svg string, checks the list of edges' absolute points
 	@return: boolean if all edges are within the canvas
 */
-func isShapeInCanvas(shape Shape) bool {
+func IsShapeInCanvas(shape Shape) bool {
 	canvasXMax := float64(canvasT.settings.CanvasXMax)
 	canvasYMax := float64(canvasT.settings.CanvasYMax)
 	for _, edge := range shape.Edges {
@@ -232,9 +236,11 @@ func isShapeInCanvas(shape Shape) bool {
 	@param: shape
 	@return: hash of the shape
 */
-func hashShape(shape Shape) string {
+func HashShape(shape Shape) string {
+	sorted := shape
+	sort.Sort(Edges(sorted.Edges))
 	hasher := md5.New()
-	s := fmt.Sprintf("%v", shape)
+	s := fmt.Sprintf("%v", sorted)
 	hash := hasher.Sum([]byte(s))
 	return hex.EncodeToString(hash)
 }

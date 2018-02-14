@@ -9,7 +9,7 @@ package blockartlib
 
 type AddShapeArgs struct {
 	// ink-miner only sees internal representation of shapes, conversion is all done by blockartlib before RPC call
-	Shape       Shape
+	ShapeMeta       ShapeMeta
 	ValidateNum uint8
 }
 
