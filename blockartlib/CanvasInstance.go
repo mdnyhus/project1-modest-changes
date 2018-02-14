@@ -594,10 +594,11 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 		end: Point{x: A.end.x - A.start.x, y: A.end.y - A.start.y}}
 	var pointB1 Point = Point{x: B.start.x - A.start.x, y: B.start.y - A.start.y}
 	var pointB2 Point = Point{x: B.end.x - A.start.x, y: B.end.y - A.start.y}
+	var edgeB Edge = Edge{start:pointB1, end:pointB2}
 	if pointsAreOnSameLine(edgeA.end, pointB1) || pointsAreOnSameLine(edgeA.end, pointB2) {
 		if !countTipToTipIntersect {
 		// if the endpoints are the only ones touching the edge, don't return true
-			if !onlyIntersectsAtEndPoint(edgeA, pointB1, pointB2) {
+			if !onlyIntersectsAtEndPoint(edgeA, edgeB) {
 				return true
 			}
 		} else {
@@ -625,39 +626,41 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 // @param pointB1 Point
 // @param pointB2 Point
 // @return bool
-func onlyIntersectsAtEndPoint(edge Edge, pointB1 Point, pointB2 Point) bool {
+func onlyIntersectsAtEndPoint(edgeA Edge, edgeB Edge) bool {
 	// to account for corner cases of horizontal/vertical lines,
 	// have to check if line is more "vertical" or "horizontal"
-	slopeEdge := math.Abs((edge.end.y-edge.start.y)/(edge.end.x-edge.start.x))
+	var pointB1 Point = edgeB.start
+	var pointB2 Point = edgeB.end
+	slopeEdge := math.Abs((edgeA.end.y- edgeA.start.y)/(edgeA.end.x- edgeA.start.x))
 	slopeB := math.Abs((pointB2.y-pointB1.y)/(pointB2.x-pointB1.x))
 	parallel := floatEquals(slopeEdge, slopeB)
-	if pointB1 == edge.start || pointB1 == edge.end {
+	if pointB1 == edgeA.start || pointB1 == edgeA.end {
 		if parallel {
-			// pointB2 has to be going the opposite direction from edge.end
-			if pointB1 == edge.start {
+			// pointB2 has to be going the opposite direction from edgeA.end
+			if pointB1 == edgeA.start {
 				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
-				slopeEdge = (edge.end.y-edge.start.y)/(edge.end.x-edge.start.x)
+				slopeEdge = (edgeA.end.y- edgeA.start.y)/(edgeA.end.x- edgeA.start.x)
 				return slopeB == -1 * slopeEdge
 			} else {
-				// pointB2 has to be going the opposite direction from edge.start
+				// pointB2 has to be going the opposite direction from edgeA.start
 				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
-				slopeEdge = (edge.start.y-edge.end.y)/(edge.start.x-edge.end.x)
+				slopeEdge = (edgeA.start.y- edgeA.end.y)/(edgeA.start.x- edgeA.end.x)
 				return slopeB == -1 * slopeEdge
 			}
 		} else {
 			return true
 		}
-	} else if pointB2 == edge.start || pointB2 == edge.end {
+	} else if pointB2 == edgeA.start || pointB2 == edgeA.end {
 		if parallel {
-			// pointB1 has to be going the opposite direction from edge.end
-			if pointB2 == edge.start {
+			// pointB1 has to be going the opposite direction from edgeA.end
+			if pointB2 == edgeA.start {
 				slopeB = (pointB1.y - pointB2.y) / (pointB1.x - pointB2.x)
-				slopeEdge = (edge.end.y - edge.start.y) / (edge.end.x - edge.start.x)
+				slopeEdge = (edgeA.end.y - edgeA.start.y) / (edgeA.end.x - edgeA.start.x)
 				return slopeB == -1*slopeEdge
 			} else {
-				// pointB1 has to be going the opposite direction from edge.start
+				// pointB1 has to be going the opposite direction from edgeA.start
 				slopeB = (pointB1.y - pointB2.y) / (pointB1.x - pointB2.x)
-				slopeEdge = (edge.start.y - edge.end.y) / (edge.start.x - edge.end.x)
+				slopeEdge = (edgeA.start.y - edgeA.end.y) / (edgeA.start.x - edgeA.end.x)
 				return slopeB == -1*slopeEdge
 			}
 		} else {

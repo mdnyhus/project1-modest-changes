@@ -368,28 +368,32 @@ func TestOnlyIntersectsAtEndPoints(t *testing.T) {
 	var edge = Edge{start:Point{10,20}, end:Point{30,20}}
 	var point1 = Point{10,20}
 	var point2 = Point{0,20}
-	if !onlyIntersectsAtEndPoint(edge, point1, point2) {
+	var edgeB = Edge{start:point1, end:point2}
+	if !onlyIntersectsAtEndPoint(edge, edgeB) {
 		t.Errorf("Expected edge %v to intersect edge with endpoints %v %v at one endpoint \n", edge, point1, point2)
 	}
 	// Case 2: Only point 2 touches edge
 	// Expect true
 	point1 = point2
 	point2 = Point{10, 20}
-	if !onlyIntersectsAtEndPoint(edge, point1, point2) {
+	edgeB = Edge{start:point1, end:point2}
+	if !onlyIntersectsAtEndPoint(edge, edgeB) {
 		t.Errorf("Expected edge %v to intersect edge with endpoints %v %v at one endpoint \n", edge, point1, point2)
 	}
 	// Case 3: Doesn't touch at all
 	// Expect false
 	point1 = Point{0, 20}
 	point2 = Point{5,20}
-	if onlyIntersectsAtEndPoint(edge, point1, point2) {
+	edgeB = Edge{start:point1, end:point2}
+	if onlyIntersectsAtEndPoint(edge, edgeB) {
 		t.Errorf("Expected edge %v to not intersect edge with endpoints %v %v \n", edge, point1, point2)
 	}
 
 	// Case 4: Intersects at more than one place
 	point1 = Point{0, 20}
 	point2 = Point{20,20}
-	if onlyIntersectsAtEndPoint(edge, point1, point2) {
+	edgeB = Edge{start:point1, end:point2}
+	if onlyIntersectsAtEndPoint(edge, edgeB) {
 		t.Errorf("Expected edge %v to intersect edge with endpoints %v %v more than once \n", edge, point1, point2)
 	}
 }
