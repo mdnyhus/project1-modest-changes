@@ -859,6 +859,7 @@ func registerMinerToServer() error {
 func startHeartBeat() error {
 	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
 		var reply bool
+		// passing the miners public key and a dummy reply
 		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
 		if clientErr != nil {
 			return ServerConnectionError("heartbeat failure")
@@ -884,10 +885,11 @@ func getNodes() error {
 		inkMiner := InkMiner{}
 		client, err := rpc.Dial(address.Network(), address.String())
 		if err != nil {
-			// if we can not connect to a node, just try the next one
+			// if we can not connect to a node, just try the next address
 			continue
 		}
 
+		// only add it if the neighbor does not already exist
 		if !doesNeighbourExist(address) {
 			inkMiner.conn = client
 			inkMiner.address = address
@@ -905,23 +907,23 @@ func getNodes() error {
 	@return: true if neighbour address is found; false otherwise
 */
 func doesNeighbourExist(addr net.Addr) bool {
-	exists := false
 	for _, inkMiner := range neighbours {
 		if inkMiner.address == addr {
-			exists = true
+			// found the ink miner with that address
+			return true
 		}
 	}
-	return exists
+	return false
 }
 
 /*
 	Checks to see if miner has greater than min number of connections
 	@return: Returns true if the miner has enough neighbours
 */
-
 func hasEnoughNeighbours() bool {
 	hasEnough := false
 	neighboursLock.Lock()
+	// checking the neighbours settings
 	if len(neighbours) >= int(minerNetSettings.MinNumMinerConnections) {
 		hasEnough = true
 	}
