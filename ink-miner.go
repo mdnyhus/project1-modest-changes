@@ -72,7 +72,8 @@ func (b Block) String() string {
 }
 
 type InkMiner struct {
-	conn *rpc.Client
+	conn    *rpc.Client
+	address net.Addr
 }
 
 // RPC type responsible for Miner-to-Miner communcation.
@@ -111,7 +112,7 @@ func (e GensisBlockNotFound) Error() string {
 type MinerSettingNotFound string
 
 func (e MinerSettingNotFound) Error() string {
-	return fmt.Sprintf("InkMiner: Could not find gensis block for %s", string(e))
+	return fmt.Sprintf("InkMiner: Could not find miner setting for %s", string(e))
 }
 
 // Receives op block flood calls. Verifies the op, which will add the op to currBlock and flood
@@ -188,7 +189,7 @@ func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) 
 		return MinerSettingNotFound("miner could not find a network setting")
 	}
 	canvasSettings := minerNetSettings.CanvasSettings
-	*reply = blockartlib.CanvasSettings{CanvasXMax: canvasSettings.CanvasXMax, CanvasYMax:canvasSettings.CanvasYMax}
+	*reply = blockartlib.CanvasSettings{CanvasXMax: canvasSettings.CanvasXMax, CanvasYMax: canvasSettings.CanvasYMax}
 	return nil
 }
 
@@ -872,26 +873,45 @@ func startHeartBeat() error {
 	@return: Server disconnected errors for rpc failures
 */
 func getNodes() error {
-	var neighbourAddresses *[]net.Addr
-	clientErr := serverConn.Call("RServer.GetNodes", &publicKey, &neighbourAddresses)
+	var newNeighbourAddresses []net.Addr
+	clientErr := serverConn.Call("RServer.GetNodes", &publicKey, &newNeighbourAddresses)
 	if clientErr != nil {
 		return ServerConnectionError("get nodes failure")
 	}
 
 	neighboursLock.Lock()
-	for _, address := range *neighbourAddresses {
+	for _, address := range newNeighbourAddresses {
 		inkMiner := InkMiner{}
 		client, err := rpc.Dial(address.Network(), address.String())
 		if err != nil {
 			// if we can not connect to a node, just try the next one
 			continue
 		}
-		inkMiner.conn = client
-		neighbours = append(neighbours, &inkMiner)
-	}
-	neighboursLock.Unlock()
 
+		if !doesNeighbourExist(address) {
+			inkMiner.conn = client
+			inkMiner.address = address
+			neighbours = append(neighbours, &inkMiner)
+		}
+	}
+
+	neighboursLock.Unlock()
 	return nil
+}
+
+/*
+	Checks if the current neighbour miner already exists in the list of neighbours
+	@param: address of the new neighbour
+	@return: true if neighbour address is found; false otherwise
+*/
+func doesNeighbourExist(addr net.Addr) bool {
+	exists := false
+	for _, inkMiner := range neighbours {
+		if inkMiner.address == addr {
+			exists = true
+		}
+	}
+	return exists
 }
 
 /*
