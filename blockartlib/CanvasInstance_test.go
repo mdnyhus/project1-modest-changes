@@ -24,12 +24,12 @@ func TestSvgToShape(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error: %v \n", err)
 	}
-	if len(shape.edges) != 3 {
-		t.Errorf("Expected 3 edges, got %d \n", len(shape.edges))
+	if len(shape.Edges) != 3 {
+		t.Errorf("Expected 3 edges, got %d \n", len(shape.Edges))
 	}
 	for _, edge := range edges {
 		found := false
-		for _, edgeFromPath := range shape.edges {
+		for _, edgeFromPath := range shape.Edges {
 			if edge == edgeFromPath {
 				found = true
 				break
@@ -70,12 +70,12 @@ func TestSvgToShape(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error: %v \n", err)
 	}
-	if len(shape.edges) != 2 {
-		t.Errorf("Expected 2 edges, got %d \n", len(shape.edges))
+	if len(shape.Edges) != 2 {
+		t.Errorf("Expected 2 edges, got %d \n", len(shape.Edges))
 	}
 	for _, edge := range edges {
 		found := false
-		for _, edgeFromPath := range shape.edges {
+		for _, edgeFromPath := range shape.Edges {
 			if edge == edgeFromPath {
 				found = true
 				break
@@ -95,15 +95,15 @@ func TestSvgIsInCanvas(t *testing.T) {
 	setUpCanvas(100, 100)
 	edges := []Edge{}
 	edges = append(edges, Edge{start:Point{x:0, y:0}, end:Point{x:30, y:0}})
-	shape := Shape{edges:edges}
+	shape := Shape{Edges:edges}
 	if !svgIsInCanvas(shape) {
 		t.Errorf("Edge {0,0}->{30,0} should be within canvas limits, is not \n")
 	}
-	shape.edges = append(shape.edges, Edge{start:Point{0,100}, end:Point{100, 0}})
+	shape.Edges = append(shape.Edges, Edge{start:Point{0,100}, end:Point{100, 0}})
 	if !svgIsInCanvas(shape) {
 		t.Errorf("Edge {0,100}->{100,0} should be within canvas limits, is not \n")
 	}
-	shape.edges = append(shape.edges, Edge{start:Point{0, -1}, end:Point{1, 2}})
+	shape.Edges = append(shape.Edges, Edge{start:Point{0, -1}, end:Point{1, 2}})
 	if svgIsInCanvas(shape) {
 		t.Errorf("edge {0,-1}->{1,2} should not be within canvas limits, is \n")
 	}
@@ -112,8 +112,8 @@ func TestSvgIsInCanvas(t *testing.T) {
 func TestInkUsed(t *testing.T) {
 	// Case 1: An open shape
 	var shape = Shape{}
-	shape.filledIn = false
-	shape.edges = []Edge{Edge{start:Point{0,0}, end:Point{10,0}},
+	shape.FilledIn = false
+	shape.Edges = []Edge{Edge{start:Point{0,0}, end:Point{10,0}},
 						Edge{start:Point{10,0}, end:Point{10,10}},
 						Edge{start:Point{10,10}, end:Point{0,10}}}
 	ink, err := InkUsed(&shape)
@@ -124,7 +124,7 @@ func TestInkUsed(t *testing.T) {
 		t.Errorf("Expected 30 units of ink, used %d \n", ink)
 	}
 	// Case 2: A closed shape, no fill
-	shape.edges = append(shape.edges, Edge{start:Point{0,10}, end:Point{0,0}})
+	shape.Edges = append(shape.Edges, Edge{start:Point{0,10}, end:Point{0,0}})
 	ink, err = InkUsed(&shape)
 	if err != nil {
 		t.Errorf("Received error %v \n", err)
@@ -134,7 +134,7 @@ func TestInkUsed(t *testing.T) {
 	}
 	// Case 3: A closed shape, filled
 	// Check double-counting
-	shape.filledIn = true
+	shape.FilledIn = true
 	ink, err = InkUsed(&shape)
 	if err != nil {
 		t.Errorf("Received error %v \n", err)
@@ -143,9 +143,9 @@ func TestInkUsed(t *testing.T) {
 		t.Errorf("Expected 100 units of ink, used %d \n", ink)
 	}
 	// Case 4: Self-intersecting shape, no fill
-	shape.filledIn = false
-	shape.edges = append(shape.edges, Edge{start:Point{0,0}, end:Point{10,10}})
-	shape.edges = append(shape.edges, Edge{start:Point{10,0}, end:Point{0,10}})
+	shape.FilledIn = false
+	shape.Edges = append(shape.Edges, Edge{start:Point{0,0}, end:Point{10,10}})
+	shape.Edges = append(shape.Edges, Edge{start:Point{10,0}, end:Point{0,10}})
 	ink, err = InkUsed(&shape)
 	if err != nil {
 		t.Errorf("Received error %v \n", err)
@@ -155,7 +155,7 @@ func TestInkUsed(t *testing.T) {
 	}
 	// Case 5: Self-intersecting shape, fill
 	// Expect error
-	shape.filledIn = true
+	shape.FilledIn = true
 	ink, err = InkUsed(&shape)
 	if err == nil {
 		t.Errorf("Expected error when filledIn = true on self-intersecting shape \n")
@@ -164,7 +164,7 @@ func TestInkUsed(t *testing.T) {
 
 func TestIsSimpleShape(t *testing.T) {
 	// Case 1: Simple (non self intersecting)
-	var shape = Shape{edges:[]Edge{
+	var shape = Shape{Edges:[]Edge{
 		Edge{start:Point{0,0}, end:Point{5,0}},
 		Edge{start:Point{5,0}, end:Point{5,5}},
 		Edge{start:Point{5,5}, end:Point{0,5}},
@@ -173,8 +173,8 @@ func TestIsSimpleShape(t *testing.T) {
 		t.Errorf("Expected shape to be simple, isn't. \n")
 	}
 	// Case 2: Non-simple (self intersect)
-	shape.edges = append(shape.edges, Edge{start:Point{0,0}, end:Point{5,5}})
-	shape.edges = append(shape.edges, Edge{start:Point{0,5}, end:Point{5,0}})
+	shape.Edges = append(shape.Edges, Edge{start:Point{0,0}, end:Point{5,5}})
+	shape.Edges = append(shape.Edges, Edge{start:Point{0,5}, end:Point{5,0}})
 	if isSimpleShape(&shape) {
 		t.Errorf("Expected shape to not be simple, is. \n")
 	}
@@ -182,7 +182,7 @@ func TestIsSimpleShape(t *testing.T) {
 
 func TestGetAreaOfShape(t *testing.T) {
 	// Case 1: Rectangle
-	var rectangle = Shape{edges:[]Edge{
+	var rectangle = Shape{Edges:[]Edge{
 		Edge{start:Point{0,23}, end:Point{20,23}},
 		Edge{start:Point{20,23}, end:Point{20,8}},
 		Edge{start:Point{20,8}, end:Point{0,8}},
@@ -195,7 +195,7 @@ func TestGetAreaOfShape(t *testing.T) {
 		t.Errorf("Expected area of rectangle to be 300, received %f\n", area)
 	}
 	// Case 2: Triangle
-	var triangle = Shape{edges:[]Edge{
+	var triangle = Shape{Edges:[]Edge{
 		Edge{start:Point{0,8}, end:Point{20,8}},
 		Edge{start:Point{20,8}, end:Point{10,0}},
 		Edge{start:Point{10,0}, end:Point{0,8}}	}}
@@ -207,7 +207,7 @@ func TestGetAreaOfShape(t *testing.T) {
 		t.Errorf("Expected area of triangle to be 80, received %f\n", area)
 	}
 	// Case 3: Pentagon
-	var pentagon = Shape{edges:[]Edge{
+	var pentagon = Shape{Edges:[]Edge{
 		Edge{start:Point{0,23}, end:Point{20,23}},
 		Edge{start:Point{20,23}, end:Point{20,8}},
 		Edge{start:Point{20,8}, end:Point{10, 0}},
@@ -222,7 +222,7 @@ func TestGetAreaOfShape(t *testing.T) {
 	}
 	// Case 4: Open shape, shouldn't be able to get area
 	// Expect error
-	var open = Shape{edges:[]Edge {
+	var open = Shape{Edges:[]Edge {
 		Edge{start:Point{0,40}, end:Point{35,40}},
 		Edge{start:Point{35,40}, end:Point{35,0}}}}
 	area, err = getAreaOfShape(&open)
@@ -237,41 +237,41 @@ func TestShapesIntersect(t *testing.T) {
 	// Expect true
 	var shape1 = Shape{}
 	var shape2 = Shape{}
-	shape1.edges = []Edge{}
-	shape1.edges = append(shape1.edges, Edge{start:Point{0,10}, end:Point{10,10}})
-	shape2.edges = []Edge{}
-	shape2.edges = append(shape1.edges, Edge{start:Point{5,5}, end:Point{5,15}})
+	shape1.Edges = []Edge{}
+	shape1.Edges = append(shape1.Edges, Edge{start:Point{0,10}, end:Point{10,10}})
+	shape2.Edges = []Edge{}
+	shape2.Edges = append(shape1.Edges, Edge{start:Point{5,5}, end:Point{5,15}})
 	if !ShapesIntersect(shape1, shape2, canvasT.settings) {
 		t.Errorf("Shapes %v, %v should be intersecting \n", shape1, shape2)
 	}
 	// Case 2: A line and a rectangle intersect
 	// Expect true
-	shape1.edges = append(shape1.edges, Edge{start:Point{10,10}, end:Point{10,20}})
-	shape1.edges = append(shape1.edges, Edge{start:Point{10,20}, end:Point{0,20}})
-	shape1.edges = append(shape1.edges, Edge{start:Point{0,20}, end:Point{0,10}})
+	shape1.Edges = append(shape1.Edges, Edge{start:Point{10,10}, end:Point{10,20}})
+	shape1.Edges = append(shape1.Edges, Edge{start:Point{10,20}, end:Point{0,20}})
+	shape1.Edges = append(shape1.Edges, Edge{start:Point{0,20}, end:Point{0,10}})
 	if !ShapesIntersect(shape1, shape2, canvasT.settings) {
 		t.Errorf("Shapes %v, %v should be intersecting \n", shape1, shape2)
 	}
 	// Case 3: Two shapes don't intersect
 	// Expect false
-	shape2.edges = []Edge{}
-	shape2.edges = append(shape2.edges, Edge{start:Point{0,40}, end:Point{35,40}})
-	shape2.edges = append(shape2.edges, Edge{start:Point{35,40}, end:Point{35,0}})
+	shape2.Edges = []Edge{}
+	shape2.Edges = append(shape2.Edges, Edge{start:Point{0,40}, end:Point{35,40}})
+	shape2.Edges = append(shape2.Edges, Edge{start:Point{35,40}, end:Point{35,0}})
 	if ShapesIntersect(shape1, shape2, canvasT.settings) {
 		t.Errorf("Shapes %v, %v should not be intersecting \n", shape1, shape2)
 	}
 	// Case 4: A rectangle entirely within another rectangle
 	// Expect true
-	shape2.edges = append(shape2.edges, Edge{start:Point{35,0}, end:Point{0,0}})
-	shape2.edges = append(shape2.edges, Edge{start:Point{0,0}, end:Point{0,40}})
+	shape2.Edges = append(shape2.Edges, Edge{start:Point{35,0}, end:Point{0,0}})
+	shape2.Edges = append(shape2.Edges, Edge{start:Point{0,0}, end:Point{0,40}})
 	if !ShapesIntersect(shape1, shape2, canvasT.settings) {
 		t.Errorf("Shapes %v, %v should be intersecting \n", shape1, shape2)
 	}
 	// Case 5: A rectangle entirely within another self-intersecting closed shape
 	// Expect true
-	shape2.edges = append(shape2.edges, Edge{start:Point{0,40}, end:Point{10,25}})
-	shape2.edges = append(shape2.edges, Edge{start:Point{10,25}, end:Point{5,25}})
-	shape2.edges = append(shape2.edges, Edge{start:Point{5,25}, end:Point{5, 40}})
+	shape2.Edges = append(shape2.Edges, Edge{start:Point{0,40}, end:Point{10,25}})
+	shape2.Edges = append(shape2.Edges, Edge{start:Point{10,25}, end:Point{5,25}})
+	shape2.Edges = append(shape2.Edges, Edge{start:Point{5,25}, end:Point{5, 40}})
 	if !ShapesIntersect(shape1, shape2, canvasT.settings) {
 		t.Errorf("Shapes %v, %v should be intersecting \n", shape1, shape2)
 	}
