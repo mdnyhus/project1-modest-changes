@@ -466,7 +466,7 @@ func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
 // @return error err
 func InkUsed(shape *Shape) (ink uint32, err error) {
 	var floatInk float64 = 0
-	if shape.filledIn {
+	if shape.FilledIn {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
@@ -497,9 +497,9 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 // @return bool
 func isSimpleShape(shape *Shape) bool {
 	// Check if the edges don't self-intersect ("simple")
-	for i := 0; i < len(shape.edges); i++ {
-		for j := i + 1; j < len(shape.edges); j++ {
-			if EdgesIntersect(shape.edges[i], shape.edges[j], false) {
+	for i := 0; i < len(shape.Edges); i++ {
+		for j := i + 1; j < len(shape.Edges); j++ {
+			if EdgesIntersect(shape.Edges[i], shape.Edges[j], false) {
 				return false
 			}
 		}
