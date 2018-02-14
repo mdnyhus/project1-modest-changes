@@ -471,7 +471,7 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		// with no self-intersecting lines. So we can assume this will always be the case.
 		// We need to check if the shape passed in is in fact simple and closed
 		area, err := getAreaOfShape(shape)
-		if err != nil {
+		if err == nil {
 			floatInk += area
 		} else {
 			return 0, err
@@ -519,9 +519,8 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 	if err != nil {
 		return 0, errors.New("Couldn't find area of an open shape")
 	}
-
 	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
-	for current.start.x != start.start.x && current.start.y != start.start.y {
+	for start != *current {
 		area += getCrossProduct(current.start, current.end)
 		current, err = findNextEdge(shape, *current)
 		if err != nil {
@@ -545,15 +544,24 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 			}
 		}
 	}
-	//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-	pointA := A.Edges[0].start
-	if pointInShape(pointA, B, canvasSettings) {
-		return true
+
+	// The following cases test if a shape fully envelopes another shape.
+
+	// Test if B is a closed shape
+	if _, err := getAreaOfShape(&B); err == nil {
+		//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+		pointA := A.Edges[0].start
+		if pointInShape(pointA, B, canvasSettings) {
+			return true
+		}
 	}
-	//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-	pointB := B.Edges[0].start
-	if pointInShape(pointB, A, canvasSettings) {
-		return true
+
+	if _, err := getAreaOfShape(&A); err == nil {
+		//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+		pointB := B.Edges[0].start
+		if pointInShape(pointB, A, canvasSettings) {
+			return true
+		}
 	}
 	//4. If not, then you can conclude that the two polygons are completely outside each other.
 	return false
@@ -585,7 +593,7 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 	if pointsAreOnSameLine(edgeA.end, pointB1) || pointsAreOnSameLine(edgeA.end, pointB2) {
 		if !countTipToTipIntersect {
 		// if the endpoints are the only ones touching the edge, don't return true
-			if !onlyIntersectsAtEndPoint(A, pointB1, pointB2) {
+			if !onlyIntersectsAtEndPoint(edgeA, pointB1, pointB2) {
 				return true
 			}
 		} else {
@@ -603,12 +611,12 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 	crossProduct2 := getCrossProduct(Point{x: A.end.x - A.start.x, y: pointB2.x - A.end.x},
 		Point{x: A.end.y - A.start.y, y: pointB2.y - A.end.y})
 	// if intersect, the signs of these cross products will be different
-	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
+	return crossProduct1 != 0 && crossProduct2 != 0 &&
+		(crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
 }
 
 // Checks if the two lines (B represented by its endpoints)
 // only intersect at one of its tips. Private helper function for EdgesIntersect.
-// ASSUME only used for parallel lines (only used in this context in caller)
 // @param A Edge
 // @param pointB1 Point
 // @param pointB2 Point
@@ -616,25 +624,40 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 func onlyIntersectsAtEndPoint(edge Edge, pointB1 Point, pointB2 Point) bool {
 	// to account for corner cases of horizontal/vertical lines,
 	// have to check if line is more "vertical" or "horizontal"
-	xDelt := math.Abs(edge.start.x - edge.end.x)
-	yDelt := math.Abs(edge.start.y - edge.end.y)
+	slopeEdge := math.Abs((edge.end.y-edge.start.y)/(edge.end.x-edge.start.x))
+	slopeB := math.Abs((pointB2.y-pointB1.y)/(pointB2.x-pointB1.x))
+	parallel := floatEquals(slopeEdge, slopeB)
 	if pointB1 == edge.start || pointB1 == edge.end {
-		// have to check if pointB2 is somewhere along the A line
-		if xDelt > yDelt {
-			return !(pointB2.x >= edge.start.x && pointB2.x <= edge.end.x ||
-				pointB2.x >= edge.end.x && pointB2.x <= edge.start.x)
+		if parallel {
+			// pointB2 has to be going the opposite direction from edge.end
+			if pointB1 == edge.start {
+				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
+				slopeEdge = (edge.end.y-edge.start.y)/(edge.end.x-edge.start.x)
+				return slopeB == -1 * slopeEdge
+			} else {
+				// pointB2 has to be going the opposite direction from edge.start
+				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
+				slopeEdge = (edge.start.y-edge.end.y)/(edge.start.x-edge.end.x)
+				return slopeB == -1 * slopeEdge
+			}
 		} else {
-			return !(pointB2.y >= edge.start.y && pointB2.y <= edge.end.y ||
-				pointB2.y >= edge.end.y && pointB2.y <= edge.start.y)
+			return true
 		}
 	} else if pointB2 == edge.start || pointB2 == edge.end {
-		// have to check if pointB1 is somewhere along A line
-		if xDelt > yDelt {
-			return !(pointB1.x >= edge.start.x && pointB1.x <= edge.end.x ||
-				pointB1.x >= edge.end.x && pointB1.x <= edge.start.x)
+		if parallel {
+			// pointB1 has to be going the opposite direction from edge.end
+			if pointB2 == edge.start {
+				slopeB = (pointB1.y - pointB2.y) / (pointB1.x - pointB2.x)
+				slopeEdge = (edge.end.y - edge.start.y) / (edge.end.x - edge.start.x)
+				return slopeB == -1*slopeEdge
+			} else {
+				// pointB1 has to be going the opposite direction from edge.start
+				slopeB = (pointB1.y - pointB2.y) / (pointB1.x - pointB2.x)
+				slopeEdge = (edge.start.y - edge.end.y) / (edge.start.x - edge.end.x)
+				return slopeB == -1*slopeEdge
+			}
 		} else {
-			return !(pointB1.y >= edge.start.y && pointB1.y <= edge.end.y ||
-				pointB1.y >= edge.end.y && pointB1.y <= edge.start.y)
+			return true
 		}
 	}
 	return false

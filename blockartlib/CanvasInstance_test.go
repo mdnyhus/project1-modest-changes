@@ -110,15 +110,125 @@ func TestSvgIsInCanvas(t *testing.T) {
 }
 
 func TestInkUsed(t *testing.T) {
-
+	// Case 1: An open shape
+	var shape = Shape{}
+	shape.filledIn = false
+	shape.edges = []Edge{Edge{start:Point{0,0}, end:Point{10,0}},
+						Edge{start:Point{10,0}, end:Point{10,10}},
+						Edge{start:Point{10,10}, end:Point{0,10}}}
+	ink, err := InkUsed(&shape)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 30 {
+		t.Errorf("Expected 30 units of ink, used %d \n", ink)
+	}
+	// Case 2: A closed shape, no fill
+	shape.edges = append(shape.edges, Edge{start:Point{0,10}, end:Point{0,0}})
+	ink, err = InkUsed(&shape)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 40 {
+		t.Errorf("Expected 40 units of ink, used %d \n", ink)
+	}
+	// Case 3: A closed shape, filled
+	// Check double-counting
+	shape.filledIn = true
+	ink, err = InkUsed(&shape)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 100 {
+		t.Errorf("Expected 100 units of ink, used %d \n", ink)
+	}
+	// Case 4: Self-intersecting shape, no fill
+	shape.filledIn = false
+	shape.edges = append(shape.edges, Edge{start:Point{0,0}, end:Point{10,10}})
+	shape.edges = append(shape.edges, Edge{start:Point{10,0}, end:Point{0,10}})
+	ink, err = InkUsed(&shape)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 68 {
+		t.Errorf("Expected 68 units of ink, used %d \n", ink)
+	}
+	// Case 5: Self-intersecting shape, fill
+	// Expect error
+	shape.filledIn = true
+	ink, err = InkUsed(&shape)
+	if err == nil {
+		t.Errorf("Expected error when filledIn = true on self-intersecting shape \n")
+	}
 }
 
 func TestIsSimpleShape(t *testing.T) {
-
+	// Case 1: Simple (non self intersecting)
+	var shape = Shape{edges:[]Edge{
+		Edge{start:Point{0,0}, end:Point{5,0}},
+		Edge{start:Point{5,0}, end:Point{5,5}},
+		Edge{start:Point{5,5}, end:Point{0,5}},
+		Edge{start:Point{0,0}}}}
+	if !isSimpleShape(&shape) {
+		t.Errorf("Expected shape to be simple, isn't. \n")
+	}
+	// Case 2: Non-simple (self intersect)
+	shape.edges = append(shape.edges, Edge{start:Point{0,0}, end:Point{5,5}})
+	shape.edges = append(shape.edges, Edge{start:Point{0,5}, end:Point{5,0}})
+	if isSimpleShape(&shape) {
+		t.Errorf("Expected shape to not be simple, is. \n")
+	}
 }
 
 func TestGetAreaOfShape(t *testing.T) {
-
+	// Case 1: Rectangle
+	var rectangle = Shape{edges:[]Edge{
+		Edge{start:Point{0,23}, end:Point{20,23}},
+		Edge{start:Point{20,23}, end:Point{20,8}},
+		Edge{start:Point{20,8}, end:Point{0,8}},
+		Edge{start:Point{0,8}, end:Point{0,23}}	}}
+	area, err := getAreaOfShape(&rectangle)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if !floatEquals(area, 300) {
+		t.Errorf("Expected area of rectangle to be 300, received %f\n", area)
+	}
+	// Case 2: Triangle
+	var triangle = Shape{edges:[]Edge{
+		Edge{start:Point{0,8}, end:Point{20,8}},
+		Edge{start:Point{20,8}, end:Point{10,0}},
+		Edge{start:Point{10,0}, end:Point{0,8}}	}}
+	area, err = getAreaOfShape(&triangle)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if !floatEquals(area, 80) {
+		t.Errorf("Expected area of triangle to be 80, received %f\n", area)
+	}
+	// Case 3: Pentagon
+	var pentagon = Shape{edges:[]Edge{
+		Edge{start:Point{0,23}, end:Point{20,23}},
+		Edge{start:Point{20,23}, end:Point{20,8}},
+		Edge{start:Point{20,8}, end:Point{10, 0}},
+		Edge{start:Point{10,0}, end:Point{0, 8}},
+		Edge{start:Point{0,8}, end:Point{0,23}}}}
+	area, err = getAreaOfShape(&pentagon)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if !floatEquals(area, 380) {
+		t.Errorf("Expected area of pentagon to be 380, received %f\n", area)
+	}
+	// Case 4: Open shape, shouldn't be able to get area
+	// Expect error
+	var open = Shape{edges:[]Edge {
+		Edge{start:Point{0,40}, end:Point{35,40}},
+		Edge{start:Point{35,40}, end:Point{35,0}}}}
+	area, err = getAreaOfShape(&open)
+	if err == nil {
+		t.Errorf("Expected error, did not receive error. Area calculated: %f \n", area)
+	}
 }
 
 func TestShapesIntersect(t *testing.T) {
@@ -226,6 +336,13 @@ func TestEdgesIntersect(t *testing.T) {
 	if !EdgesIntersect(edge1, edge2, true) {
 		t.Errorf("Edges %v, %v should be intersecting \n", edge1, edge2)
 	}
+
+	// Case 6:
+	edge1 = Edge{start:Point{0,0}, end:Point{5,0}}
+	edge2 = Edge{start:Point{5,0}, end:Point{5,5}}
+	if EdgesIntersect(edge1, edge2, false) {
+		t.Errorf("Edges %v, %v should not be intersecting \n", edge1, edge2)
+	}
 }
 
 func TestOnlyIntersectsAtEndPoints(t *testing.T) {
@@ -261,17 +378,19 @@ func TestOnlyIntersectsAtEndPoints(t *testing.T) {
 }
 
 func TestBoxesIntersect(t *testing.T) {
-
+	// write these tests if bug encountered in one of its callers
 }
 
 func TestPointInShape(t *testing.T) {
+	// write these tests if bug encountered in one of its callers
 
 }
 
 func TestPointsAreOnSameLine(t *testing.T) {
+	// write these tests if bug encountered in one of its callers
 
 }
 
 func TestFindNextEdge(t *testing.T) {
-	//closedShape := Shape{}
+	// write these tests if bug encountered in one of its callers
 }
