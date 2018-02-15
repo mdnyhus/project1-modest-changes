@@ -164,6 +164,13 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 		headBlock = block
 	}
 
+	// notify all opChans
+	for _, opChan := range opChans {
+		go func() {
+			opChan <- block
+		}()
+	}
+
 	floodBlock(*block)
 
 	return nil
