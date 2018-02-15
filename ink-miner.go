@@ -432,10 +432,8 @@ func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) (boo
 		block := chain[i]
 		hash := hashBlock(*block)
 		if _, exists := blockTree[hash]; exists {
-			// Block is already stored locally, so has already been validated.
-			// Since block has already been validated, all parents of block
-			// must also be valid.
-			break
+			// Block is already stored locally, so has already been validated
+			continue
 		} else {
 			// validate block, knowing that all parent blocks are valid
 			if err = validateBlock(chain[i:]); err != nil {
@@ -1015,7 +1013,7 @@ func getNodes() error {
 	@return: true if neighbour address is found; false otherwise
 */
 func doesNeighbourExist(addr net.Addr) bool {
-	_ , exists := neighbours[addr]
+	_, exists := neighbours[addr]
 	return exists
 }
 
@@ -1035,7 +1033,7 @@ func hasEnoughNeighbours() bool {
 */
 func requestForMoreNodesRoutine() error {
 	for range time.Tick(0.5 * time.Second) {
-		if !hasEnoughNeighbours(){
+		if !hasEnoughNeighbours() {
 			err := getNodes()
 			if err != nil {
 				return err
