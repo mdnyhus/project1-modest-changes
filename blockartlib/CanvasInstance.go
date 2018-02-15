@@ -1,17 +1,17 @@
 package blockartlib
 
 import (
-	"sort"
 	"crypto/ecdsa"
 	"crypto/md5"
 	"encoding/hex"
-	"time"
 	"errors"
 	"fmt"
 	"math"
 	"net/rpc"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type CanvasInstance struct {
@@ -46,7 +46,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 	shapeMeta := ShapeMeta{Hash: hash, Shape: *shape}
 
 	args := &AddShapeArgs{
-		ShapeMeta:       shapeMeta,
+		ShapeMeta:   shapeMeta,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
 	if err = canvas.client.Call("LibMin.AddShape", args, &reply); err != nil {

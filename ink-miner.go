@@ -19,9 +19,9 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"sort"
 	"strings"
 	"sync"
-	"sort"
 	"time"
 )
 
@@ -51,9 +51,9 @@ var address string
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
 type Op struct {
-	shapeMeta     *blockartlib.ShapeMeta // not nil iff adding shape
-	deleteShapeHash string // non-empty iff removing shape
-	owner     string // hash of pub/priv keys
+	shapeMeta       *blockartlib.ShapeMeta // not nil iff adding shape
+	deleteShapeHash string                 // non-empty iff removing shape
+	owner           string                 // hash of pub/priv keys
 }
 
 type Block struct {
@@ -166,7 +166,7 @@ func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) 
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
 	// construct Op for shape
 	op := Op{
-		shapeMeta:     &args.ShapeMeta,
+		shapeMeta: &args.ShapeMeta,
 		owner:     "", // TODO - generate owner hash
 	}
 
@@ -231,9 +231,9 @@ func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
 func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
 	// construct Op for deletion
 	op := Op{
-		shapeMeta:     nil,
+		shapeMeta:       nil,
 		deleteShapeHash: args.ShapeHash,
-		owner:     "", // TODO -  get this from server/global vars
+		owner:           "", // TODO -  get this from server/global vars
 	}
 
 	// receiveNewOp will try to add op to current block and flood op
@@ -268,8 +268,7 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 	for _, op := range block.ops {
 		// add op's hash to reply.ShapeHashes
 		hash := op.deleteShapeHash
-		var emptyShapeMeta *blockartlib.ShapeMeta
-		if op.shapeMeta != emptyShapeMeta {
+		if op.shapeMeta != nil {
 			hash = op.shapeMeta.Hash
 		}
 		reply.ShapeHashes = append(reply.ShapeHashes, hash)
@@ -522,7 +521,6 @@ func verifyOps(block Block) error {
 			return err
 		}
 
-		// TODO: Only checks for *intersections*. Must also check for total overlap.
 		// Ensure op does not conflict with previous ops.
 		for j := 0; j < i; j++ {
 			if jOp := block.ops[j]; op.owner != jOp.owner {
@@ -546,10 +544,14 @@ func verifyOps(block Block) error {
 }
 
 // Verifies an op against all previous ops in the blockchain. Assumes all previous blocks in chain are valid.
+// LOCKS: Acquires headBlockLock.
 // @param candidateOp Op: The op to verify.
 // @param block *Block: The headBlock on which to begin the verification.
 // @param ch chan<-error: The channel to which verification errors are piped into, or nil if no errors are found.
-func verifyOp(candidateOp Op, block *Block, ch chan<-error) {
+func verifyOp(candidateOp Op, block *Block, ch chan<- error) {
+	headBlockLock.Lock()
+	defer headBlockLock.Unlock()
+
 	// Verify op with shape.
 	if candidateOp.shapeMeta != nil {
 		shape := candidateOp.shapeMeta.Shape
@@ -558,7 +560,7 @@ func verifyOp(candidateOp Op, block *Block, ch chan<-error) {
 			ch <- blockartlib.ShapeSvgStringTooLongError(svg)
 			return
 		}
-	
+
 		// Ensure shape is on the canvas.
 		if !blockartlib.IsShapeInCanvas(shape) {
 			ch <- blockartlib.OutOfBoundsError{}
@@ -590,9 +592,14 @@ func verifyOp(candidateOp Op, block *Block, ch chan<-error) {
 				break
 			}
 
-			curr = crawlChainHelperGetBlock(curr.prev)
+			var ok bool
+			curr, ok = blockTree[curr.prev]
+			if !ok {
+				ch <- blockartlib.InvalidBlockHashError(curr.prev)
+				return
+			}
 		}
-	// Verify deletion op.
+		// Verify deletion op.
 	} else {
 		if err := shapeExists(candidateOp.deleteShapeHash, candidateOp.owner, block); err != nil {
 			ch <- err
@@ -777,7 +784,7 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 // - checks if the passed shape intersects with any shape currently on the canvas
 //   that is NOT owned by this miner, starting at headBlock
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param shape *blockartlib.Shape: pointer to shape that will be checked for 
+// @param shape *blockartlib.Shape: pointer to shape that will be checked for
 //                                  intersections
 // @param headBlock *Block: head block of chain from which ink will be calculated
 // @return shapeOverlapHash string: empty if shape does intersect with any other

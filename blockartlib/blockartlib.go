@@ -8,12 +8,12 @@ library (blockartlib) to be used in project 1 of UBC CS 416 2017W2.
 package blockartlib
 
 import (
+	"crypto/ecdsa"
 	"fmt"
 	"net/rpc"
 	"os"
 	"sync"
 	"time"
-	"crypto/ecdsa"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -72,7 +72,7 @@ type Edge struct {
 type Edges []Edge
 
 type ShapeMeta struct {
-	Hash string
+	Hash  string
 	Shape Shape
 }
 
@@ -280,7 +280,7 @@ func (e Edges) Less(i, j int) bool {
 	jsy := e[j].start.y
 	jex := e[j].end.x
 	jey := e[j].end.y
-	
+
 	if isx != jsx {
 		return isx < jsx
 	} else if isy != jsy {
@@ -291,4 +291,3 @@ func (e Edges) Less(i, j int) bool {
 
 	return iey < jey
 }
-
