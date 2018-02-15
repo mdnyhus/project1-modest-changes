@@ -145,6 +145,12 @@ func main() {
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 
+	// https://piazza.com/class/jbyh5bsk4ez3cn?cid=396
+	gob.Register(elliptic.P224())
+	gob.Register(elliptic.P256())
+	gob.Register(elliptic.P384())
+	gob.Register(elliptic.P521())
+
 	path := flag.String("c", "", "Path to the JSON config")
 	flag.Parse()
 
@@ -246,7 +252,6 @@ func (a Addresses) Less(i, j int) bool { return a[i].String() < a[j].String() }
 // Returns:
 // - UnknownKeyError if the server does not know a miner with this publicKey.
 func (s *RServer) GetNodes(key ecdsa.PublicKey, addrSet *[]net.Addr) error {
-
 	// TODO: validate miner's GetNodes protocol? (could monitor state
 	// of network graph/connectivity and validate protocol FSM)
 

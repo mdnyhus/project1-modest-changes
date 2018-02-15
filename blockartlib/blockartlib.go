@@ -9,6 +9,7 @@ package blockartlib
 
 import (
 	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
 	"net/rpc"
 	"os"
@@ -58,7 +59,13 @@ type MinerNetSettings struct {
 	PoWDifficultyNoOpBlock uint8
 
 	// Canvas settings
-	canvasSettings CanvasSettings
+	CanvasSettings CanvasSettings
+}
+
+type Hash []byte
+
+func (h Hash) String() string {
+	return hex.EncodeToString(h)
 }
 
 type Point struct {
@@ -238,6 +245,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 
 	canvasT.minerAddr = minerAddr
 	canvasT.privKey = privKey
+	canvasT.closed = true
 
 	// connect to miner
 	if canvasT.client, err = rpc.Dial("tcp", minerAddr); err != nil {
@@ -249,6 +257,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	}
 
 	canvasT.settings = setting
+	canvasT.closed = false
 
 	return canvasT, setting, nil
 }
