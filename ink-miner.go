@@ -23,6 +23,7 @@ import (
 	"net/rpc"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -157,6 +158,26 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 	defer headBlockLock.Unlock()
 
 	if block.len > headBlock.len {
+		// head block is about to change; need to update currBlock
+		blockLock.Lock()
+		newOps := []Op{}
+		verificationChan := make(chan error, 1)
+		for _, oldOp := range currBlock.ops {
+			// go through ops sequentially for simplicity
+			// TODO - if runtime is really bad, could make it parallel
+			go verifyOp(oldOp, block, verificationChan)
+			err := <-verificationChan
+			if err == nil {
+				// op is still valid (wasn't added in a previous block)
+				newOps = append(newOps, oldOp)
+			}
+		}
+		close(verificationChan)
+		currBlock.ops = newOps
+		currBlock.prev = hashBlock(*block)
+		blockLock.Unlock()
+
+		// update headBlock
 		headBlock = block
 	}
 
@@ -402,6 +423,7 @@ func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) (boo
 	for {
 		// add current element to the end of the chain
 		chain = append(chain, curr)
+		// TODO - notifyBlock if parent is new
 		parent := crawlChainHelperGetBlock(curr.prev)
 		if parent == nil {
 			// If the parent could not be found, then the hash is invalid.
@@ -523,6 +545,7 @@ func hashBlock(block Block) string {
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
 func verifyBlockHash(hash string) error {
+	// TODO - if PoWDifficultyNoOpBlock is different, need to check if there are any ops
 	n := int(minerNetSettings.PoWDifficultyOpBlock)
 	if hash[len(hash)-n:] == strings.Repeat("0", n) {
 		return nil
@@ -1032,6 +1055,55 @@ func requestForMoreNodesRoutine() error {
 	return nil
 }
 
+/*
+	Tries to find a nonce such that the hash of the block has the correct
+	number of trailing zeros
+	Since acquiring a lock can be expensive, this function tries some n nonces
+	before giving up the lock, and then trying to re-acquire it
+*/
+func mine() {
+	// number of nonces to try before giving up lock
+	numTries := 1000
+
+	// so that we don't check the same nonce again and again,
+	// keep a value that is always incremented. It will (eventually)
+	// roll over, but that's ok; by then, the curBlock will have almost
+	// certainly changed
+	nonceTry := 0
+
+	// should be trying to mine constantly
+	for {
+		// acquire lock
+		blockLock.Lock()
+
+		for i := 0; i < numTries; i++ {
+			currBlock.nonce = strconv.Itoa(nonceTry)
+			nonceTry++
+			currHash := hashBlock(*currBlock)
+			if err := verifyBlockHash(currHash); err == nil {
+				// currBlock is now a valid block
+				// the RPC call does the work we need, so just call it from within this miner
+				m := new(MinMin)
+				var reply bool
+				// if it's successful, we want to start with a clean block
+				// if it's unsuccessful, it's the responsability of op routines to add back
+				// operations, at which point they will be re-validated (but this case should
+				// never actually happen)
+				// in both cases, we don't care about the result
+				m.NotifyNewBlock(currBlock, &reply)
+
+				// TODO - needs to be updated with crypto stuff
+				block := Block{prev: currHash, len: currBlock.len + 1}
+				currBlock = &block
+				break
+			}
+		}
+
+		// give up lock
+		blockLock.Unlock()
+	}
+}
+
 func main() {
 	// ink-miner should take one parameter, which is its address
 	// skip program
@@ -1095,5 +1167,9 @@ func main() {
 	}
 	go server.Accept(l)
 
-	// TODO - should start mining
+	go mine()
+
+	for {
+
+	}
 }
