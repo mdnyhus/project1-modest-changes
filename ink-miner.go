@@ -13,9 +13,9 @@ package main
 
 import (
 	"./blockartlib"
-	"crypto/rand"
 	"crypto/ecdsa"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/hex"
 	"fmt"
