@@ -41,7 +41,7 @@ var headBlock *Block
 var headBlockLock = &sync.Mutex{}
 
 // Neighbours
-var neighbours map[net.Addr]InkMiner
+var neighbours = make(map[net.Addr]InkMiner)
 var neighboursLock = &sync.Mutex{}
 
 // Network
@@ -1091,8 +1091,6 @@ func main() {
 
 	publicKey = parsedPublicKey.(ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
-
-	// TODO - should communicate with server to get CanvasSettings and other miners in the network
 	client, err := rpc.Dial("tcp", address)
 	if err != nil {
 		// can't proceed without a connection to the server
