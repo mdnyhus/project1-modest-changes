@@ -146,8 +146,7 @@ func main() {
 	gob.Register(&elliptic.CurveParams{})
 
 	// https://piazza.com/class/jbyh5bsk4ez3cn?cid=396
-	// TODO -> so we should not need to use P224 or 226 in our encryption
-	gob.Register(elliptic.P224()) // TODO -> apparently we are supppose to need this
+	gob.Register(elliptic.P224())
 	gob.Register(elliptic.P256())
 	gob.Register(elliptic.P384())
 	gob.Register(elliptic.P521())
