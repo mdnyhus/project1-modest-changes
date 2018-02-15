@@ -96,15 +96,15 @@ func TestSvgIsInCanvas(t *testing.T) {
 	edges := []Edge{}
 	edges = append(edges, Edge{start:Point{x:0, y:0}, end:Point{x:30, y:0}})
 	shape := Shape{Edges:edges}
-	if !svgIsInCanvas(shape) {
+	if !IsShapeInCanvas(shape) {
 		t.Errorf("Edge {0,0}->{30,0} should be within canvas limits, is not \n")
 	}
 	shape.Edges = append(shape.Edges, Edge{start:Point{0,100}, end:Point{100, 0}})
-	if !svgIsInCanvas(shape) {
+	if !IsShapeInCanvas(shape) {
 		t.Errorf("Edge {0,100}->{100,0} should be within canvas limits, is not \n")
 	}
 	shape.Edges = append(shape.Edges, Edge{start:Point{0, -1}, end:Point{1, 2}})
-	if svgIsInCanvas(shape) {
+	if IsShapeInCanvas(shape) {
 		t.Errorf("edge {0,-1}->{1,2} should not be within canvas limits, is \n")
 	}
 }
