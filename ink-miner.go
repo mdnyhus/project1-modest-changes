@@ -17,6 +17,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/md5"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -219,8 +220,16 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
 // @return error: Any errors produced
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
+	timestamp := time.Now()
+	hash := hashString(timestamp.String() + args.ShapeMeta.Hash)
+	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
+	if err != nil {
+		return err
+	}
+
 	// construct Op for shape
 	op := Op{
+		timestamp: timestamp,
 		shapeMeta: &args.ShapeMeta,
 		owner:     publicKey,
 	}
@@ -296,6 +305,14 @@ func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error)
 // @param err error: Any errors produced
 func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
 	// construct Op for deletion
+
+	timestamp := time.Now()
+	hash := hashString(timestamp.String() + args.ShapeHash)
+	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
+	if err != nil {
+		return err
+	}
+
 	op := Op{
 		deleteShapeHash: args.ShapeHash,
 		owner:           publicKey,
@@ -593,6 +610,15 @@ func hashOp(op Op) blockartlib.Hash {
 	return blockartlib.Hash(hasher.Sum(nil)[:])
 }
 
+// Returns hash of string.
+// @param s string: The string to hash.
+// @return []byte: The hash of the string.
+func hashString(s string) []byte {
+	hasher := md5.New()
+	hasher.Write([]byte(s))
+	return hasher.Sum(nil)[:]
+}
+
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
@@ -657,7 +683,7 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 
 	// Verify signature.
 	if !ecdsa.Verify(&candidateOp.owner, candidateOpMeta.hash, &candidateOpMeta.r, &candidateOpMeta.s) {
-		ch <- blockartlib.InvalidShapeHashError(string(candidateOpMeta.hash))
+		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.String())
 		return
 	}
 
