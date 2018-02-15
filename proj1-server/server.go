@@ -144,6 +144,7 @@ func readConfigOrDie(path string) {
 func main() {
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
+	gob.Register(elliptic.P224()) // TODO: not sure if we can add anything to server.go
 
 	path := flag.String("c", "", "Path to the JSON config")
 	flag.Parse()
@@ -246,7 +247,6 @@ func (a Addresses) Less(i, j int) bool { return a[i].String() < a[j].String() }
 // Returns:
 // - UnknownKeyError if the server does not know a miner with this publicKey.
 func (s *RServer) GetNodes(key ecdsa.PublicKey, addrSet *[]net.Addr) error {
-
 	// TODO: validate miner's GetNodes protocol? (could monitor state
 	// of network graph/connectivity and validate protocol FSM)
 

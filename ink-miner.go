@@ -16,7 +16,7 @@ import (
 	"./proj1-server/rpcCommunication"
 	"crypto/ecdsa"
 	"crypto/md5"
-	"crypto/x509"
+	//"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -26,6 +26,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/gob"
 )
 
 // Static
@@ -47,7 +50,8 @@ var neighboursLock = &sync.Mutex{}
 // Network
 var blockTree map[string]*Block
 var serverConn *rpc.Client
-var address string
+var outgoingAddress string
+var incomingAddress string
 
 // Network Instructions
 var minerNetSettings *rpcCommunication.MinerNetSettings
@@ -933,12 +937,12 @@ func inkAvail(miner string, headBlock *Block) (ink uint32) {
 	@return error: ServerConnectionError if connection to server fails
 */
 func registerMinerToServer() error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", incomingAddress)
 	if err != nil {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		return ServerConnectionError("registration failure ")
 	}
@@ -981,7 +985,7 @@ func getNodes() error {
 		if !doesNeighbourExist(address) {
 			client, err := rpc.Dial(address.Network(), address.String())
 			if err != nil {
-				// if we can not connect to a node, just try the next address
+				// if we can not connect to a node, just try the next outgoingAddress
 				continue
 			} else {
 				inkMiner := InkMiner{}
@@ -998,8 +1002,8 @@ func getNodes() error {
 
 /*
 	Checks if the current neighbour miner already exists in the list of neighbours
-	@param: address of the new neighbour
-	@return: true if neighbour address is found; false otherwise
+	@param: outgoingAddress of the new neighbour
+	@return: true if neighbour outgoingAddress is found; false otherwise
 */
 func doesNeighbourExist(addr net.Addr) bool {
 	_, exists := neighbours[addr]
@@ -1021,8 +1025,8 @@ func hasEnoughNeighbours() bool {
 	@returns: error when it fails to reach the server
 */
 func requestForMoreNodesRoutine() error {
-	for range time.Tick(0.5 * time.Second) {
-		if !hasEnoughNeighbours() {
+	for range time.Tick(500 * time.Millisecond) {
+		if !hasEnoughNeighbours(){
 			err := getNodes()
 			if err != nil {
 				return err
@@ -1033,11 +1037,11 @@ func requestForMoreNodesRoutine() error {
 }
 
 func main() {
-	// ink-miner should take one parameter, which is its address
+	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 3
+	numArgs := 1
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1050,50 +1054,69 @@ func main() {
 		return
 	}
 
-	address = args[0]
+	outgoingAddress = args[0]
+
+	// TODO: Uncomment the below:
 
 	//TODO: verify if this parse is this correct?
-	parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
-	if err != nil {
-		// can't proceed without a proper public key
-		fmt.Printf("miner needs a valid public key")
-		return
-	}
+	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
+	//if err != nil {
+	//	// can't proceed without a proper public key
+	//	fmt.Printf("miner needs a valid public key")
+	//	return
+	//}
+	//
+	//parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
+	//if err != nil {
+	//	// can't proceed without a proper private key
+	//	fmt.Printf("miner needs a valid private key")
+	//	return
+	//}
+	//
+	//publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	//privateKey = *parsedPrivateKey
 
-	parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
-	if err != nil {
-		// can't proceed without a proper private key
-		fmt.Printf("miner needs a valid private key")
-		return
-	}
+	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	privKey := *keyPointer
+	publicKey = privKey.PublicKey
+	privateKey = privKey
 
-	publicKey = parsedPublicKey.(ecdsa.PublicKey)
-	privateKey = *parsedPrivateKey
-	client, err := rpc.Dial("tcp", address)
+	gob.Register(&net.TCPAddr{})
+	gob.Register(&elliptic.CurveParams{})
+	gob.Register(elliptic.P224())
+
+	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {
 		// can't proceed without a connection to the server
 		fmt.Printf("miner can not dial to the server")
 		return
 	}
 	serverConn = client
-	if registerMinerToServer() != nil {
-		// can not proceed if it is not register to the server
-		fmt.Printf("miner can not register itself to the server")
-		return
-	}
-	go startHeartBeat()
-
-	go requestForMoreNodesRoutine()
 
 	// Setup RPC
 	server := rpc.NewServer()
 	libMin := new(LibMin)
 	server.Register(libMin)
-	l, e := net.Listen("tcp", address)
+	// need automatic port generation
+	ip := strings.Split(outgoingAddress, ":")
+	l, e := net.Listen("tcp", ip[0] + ":0")
 	if e != nil {
+		fmt.Printf("%v\n", e)
 		return
 	}
 	go server.Accept(l)
+	incomingAddress = l.Addr().String()
+	// Register miner's incomingAddress
+	if registerMinerToServer() != nil {
+		// can not proceed if it is not register to the server
+		fmt.Printf("miner can not register itself to the server")
+		return
+	}
 
+	go startHeartBeat()
+
+	go requestForMoreNodesRoutine()
+
+	//time.Sleep(10 * time.Minute)
 	// TODO - should start mining
 }
