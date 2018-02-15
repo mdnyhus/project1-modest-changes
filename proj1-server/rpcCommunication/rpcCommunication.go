@@ -10,14 +10,8 @@ package rpcCommunication
 import (
 	"net"
 	"crypto/ecdsa"
+	"../../blockartlib"
 )
-
-// Settings for a canvas in BlockArt.
-type CanvasSettings struct {
-	// Canvas dimensions
-	CanvasXMax uint32
-	CanvasYMax uint32
-}
 
 type MinerInfo struct {
 	Address net.Addr
@@ -65,5 +59,5 @@ type MinerNetSettings struct {
 	PoWDifficultyNoOpBlock uint8
 
 	// Canvas settings
-	CanvasSettings CanvasSettings
+	CanvasSettings blockartlib.CanvasSettings
 }

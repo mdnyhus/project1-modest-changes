@@ -188,8 +188,7 @@ func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) 
 	if minerNetSettings == nil {
 		return MinerSettingNotFound("miner could not find a network setting")
 	}
-	canvasSettings := minerNetSettings.CanvasSettings
-	*reply = blockartlib.CanvasSettings{CanvasXMax: canvasSettings.CanvasXMax, CanvasYMax: canvasSettings.CanvasYMax}
+	*reply = minerNetSettings.CanvasSettings
 	return nil
 }
 
@@ -931,6 +930,23 @@ func hasEnoughNeighbours() bool {
 	return hasEnough
 }
 
+/*
+	Routine for the ink miner to request for more nodes when
+	it has less than the min number of miners
+	@returns: error when it fails to reach the server
+*/
+func requestForMoreNodesRoutine() error {
+	for range time.Tick(1 * time.Second) {
+		if !hasEnoughNeighbours(){
+			err := getNodes()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func main() {
 	// ink-miner should take one parameter, which is its address
 	// skip program
@@ -983,6 +999,8 @@ func main() {
 		return
 	}
 	go startHeartBeat()
+
+	go requestForMoreNodesRoutine()
 
 	// Setup RPC
 	server := rpc.NewServer()
