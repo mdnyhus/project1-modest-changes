@@ -13,9 +13,12 @@ package main
 
 import (
 	"./blockartlib"
+	"crypto/ecdsa"
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"net"
 	"net/rpc"
 	"os"
@@ -29,6 +32,8 @@ import (
 var canvasSettings blockartlib.CanvasSettings
 var minConn int
 var n int // Num 0's required in POW
+var publicKey ecdsa.PublicKey
+var privateKey ecdsa.PrivateKey
 
 // Current block
 var currBlock *Block
@@ -51,15 +56,22 @@ var address string
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
 type Op struct {
-	shapeMeta       *blockartlib.ShapeMeta // not nil iff adding shape
-	deleteShapeHash string                 // non-empty iff removing shape
-	owner           string                 // hash of pub/priv keys
+	timestamp       time.Time              // timestamp for when this op was issued.
+	shapeMeta       *blockartlib.ShapeMeta // not nil iff adding shape.
+	deleteShapeHash string                 // non-empty iff removing shape.
+	owner           ecdsa.PublicKey        // public key of miner that issued this op.
+	r, s            big.Int                // signature of the miner who issued this op.
+	hash            []byte                 // Unique identifier of this op.
+	// Hash of timestamp and either deleteShapHash or shapeMeta.Hash.
 }
 
 type Block struct {
 	prev  string
 	ops   []Op
 	len   int
+	miner ecdsa.PublicKey // public key of the miner that mined this block.
+	r, s  big.Int         // signature of the miner that mined this block.
+	hash  []byte          // unique identifier of this block.
 	nonce string
 }
 
@@ -154,8 +166,11 @@ type LibMin int
 // @param args int: required by Go's RPC; does nothing
 // @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
 // @return error: Any errors produced
-func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) (err error) {
-	*reply = canvasSettings
+func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib.OpenCanvasReply) (err error) {
+	if args.Priv != privateKey || args.Pub != publicKey {
+		return blockartlib.DisconnectedError("")
+	}
+	*reply = blockartlib.OpenCanvasReply{CanvasSettings: canvasSettings}
 	return nil
 }
 
@@ -164,10 +179,23 @@ func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) 
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
 // @return error: Any errors produced
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
+	// TODO Add ink checks, other op validation.
+
+	timestamp := time.Now()
+	hash := hashString(timestamp.String() + args.ShapeMeta.Hash)
+	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
+	if err != nil {
+		return err
+	}
+
 	// construct Op for shape
 	op := Op{
+		timestamp: timestamp,
 		shapeMeta: &args.ShapeMeta,
-		owner:     "", // TODO - generate owner hash
+		owner:     publicKey,
+		r:         *r,
+		s:         *s,
+		hash:      hash,
 	}
 
 	// receiveNewOp will try to add op to current block and flood op
@@ -210,15 +238,13 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 // @param args args *int: dummy argument that is not used
 // @param reply *uint32: amount of remaining ink, in pixels
 // @param err error: Any errors produced
-func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
+func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error) {
 	// acquire currBlock's lock
 	// TODO - is this needed? it's read-only (is it?)
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
-	minerIdentityHash := "" // TODO - get this from server/global vars
-
-	*reply = inkAvail(minerIdentityHash, currBlock)
+	*reply = inkAvail(args.Miner, currBlock)
 	return nil
 }
 
@@ -230,10 +256,22 @@ func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
 // @param err error: Any errors produced
 func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
 	// construct Op for deletion
+
+	timestamp := time.Now()
+	hash := hashString(timestamp.String() + args.ShapeHash)
+	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
+	if err != nil {
+		return err
+	}
+
 	op := Op{
+		timestamp:       timestamp,
 		shapeMeta:       nil,
 		deleteShapeHash: args.ShapeHash,
-		owner:           "", // TODO -  get this from server/global vars
+		owner:           publicKey,
+		r:               *r,
+		s:               *s,
+		hash:            hash,
 	}
 
 	// receiveNewOp will try to add op to current block and flood op
@@ -245,7 +283,7 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 	// TODO - wait until args.ValidateNum blocks have been added this block before returning
 
 	// Get ink
-	var getInkArgs int
+	getInkArgs := blockartlib.GetInkArgs{Miner: publicKey}
 	return l.GetInk(&getInkArgs, &reply.InkRemaining)
 }
 
@@ -474,10 +512,18 @@ func crawlChainHelperGetBlock(hash string) (block *Block) {
 //                        (and thus the last block should be the Genesis block)
 // @return err error: any errors from validation; nil if block is valid
 func validateBlock(chain []*Block) (err error) {
-	if err = verifyBlockHash(hashBlock(*chain[0])); err != nil {
+	block := *chain[0]
+
+	// Verify block signature.
+	if !ecdsa.Verify(&block.miner, block.hash, &block.r, &block.s) {
+		return blockartlib.InvalidBlockHashError(string(block.hash))
+	}
+	// Verify POW.
+	if err = verifyBlockNonce(hashBlock(block)); err != nil {
 		return err
 	}
-	if err = verifyOps(*chain[0]); err != nil {
+	// Verify ops.
+	if err = verifyOps(block); err != nil {
 		return err
 	}
 
@@ -501,10 +547,19 @@ func hashBlock(block Block) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
+// Returns hash of string.
+// @param s string: The string to hash.
+// @return []byte: The hash of the string.
+func hashString(s string) []byte {
+	hasher := md5.New()
+	hasher.Write([]byte(s))
+	return hasher.Sum(nil)[:]
+}
+
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
-func verifyBlockHash(hash string) error {
+func verifyBlockNonce(hash string) error {
 	if hash[len(hash)-n:] == strings.Repeat("0", n) {
 		return nil
 	}
@@ -552,6 +607,12 @@ func verifyOp(candidateOp Op, block *Block, ch chan<- error) {
 	headBlockLock.Lock()
 	defer headBlockLock.Unlock()
 
+	// Verify signature.
+	if !ecdsa.Verify(&candidateOp.owner, candidateOp.hash, &candidateOp.r, &candidateOp.s) {
+		ch <- blockartlib.InvalidShapeHashError(string(candidateOp.hash))
+		return
+	}
+
 	// Verify op with shape.
 	if candidateOp.shapeMeta != nil {
 		shape := candidateOp.shapeMeta.Shape
@@ -575,10 +636,16 @@ func verifyOp(candidateOp Op, block *Block, ch chan<- error) {
 			return
 		}
 
-		// Ensure shape does not overlap with other ops in the chain.
+		// Ensure op is not duplicate and shape does not overlap with other ops in the chain.
 		curr := block
 		for {
 			for _, op := range curr.ops {
+				// This op has been performed before.
+				if string(candidateOp.hash) == string(op.hash) {
+					// TODO: More specific error?
+					ch <- blockartlib.OutOfBoundsError{}
+					return
+				}
 				if candidateOp.owner != op.owner {
 					if blockartlib.ShapesIntersect(shape, op.shapeMeta.Shape, canvasSettings) {
 						ch <- blockartlib.ShapeOverlapError(candidateOp.shapeMeta.Hash)
@@ -802,13 +869,13 @@ func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash
 // a non-nil error
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
 // @param deleteShapeHash string: hash of shape to check
-// @param owner string: string identfying miner
+// @param owner ecdsa.PublicKey: public key identfying miner
 // @param headBlock *Block: head block of chain from which ink will be calculated
 // @return err error: Error indicating if shape is valid. Can be nil or one
 //                    of the following errors:
 // 						- ShapeOwnerError
 //						- TODO - error if shape does not exist?
-func shapeExists(deleteShapeHash string, ownder string, headBlock *Block) (err error) {
+func shapeExists(deleteShapeHash string, owner ecdsa.PublicKey, headBlock *Block) (err error) {
 	// TODO
 	return blockartlib.ShapeOwnerError(deleteShapeHash)
 }
@@ -817,7 +884,7 @@ func shapeExists(deleteShapeHash string, ownder string, headBlock *Block) (err e
 /* Structs and helper function for crawlChain for getInk */
 ///////////////////////////////////////////////////////////
 type inkAvailCrawlArgs struct {
-	miner string
+	miner ecdsa.PublicKey
 }
 
 type inkAvailCrawlReply struct {
@@ -894,10 +961,10 @@ func searchSlice(search string, slice []string) (index int) {
 
 // Counts the amount of ink currently available to passed miner starting at headBlock
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param owner string: string identfying miner
+// @param owner ecdsa.PublicKey: public key identfying miner
 // @param headBlock *Block: head block of chain from which ink will be calculated
 // @return ink uint32: ink currently available to this miner, in pixels
-func inkAvail(miner string, headBlock *Block) (ink uint32) {
+func inkAvail(miner ecdsa.PublicKey, headBlock *Block) (ink uint32) {
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
 	args := &inkAvailCrawlArgs{miner: miner}
 	var reply inkAvailCrawlReply

@@ -7,6 +7,8 @@ ink-miner. It is placed in this file for cleaner organization of code.
 
 package blockartlib
 
+import "crypto/ecdsa"
+
 type AddShapeArgs struct {
 	// ink-miner only sees internal representation of shapes, conversion is all done by blockartlib before RPC call
 	ShapeMeta       ShapeMeta
@@ -33,6 +35,19 @@ type GetSvgStringReply struct {
 	// RPC errors are all cast to a ServerError
 	// So, store actual error here; nil indicates no error
 	Error error
+}
+
+type OpenCanvasArgs struct {
+	Priv ecdsa.PrivateKey
+	Pub ecdsa.PublicKey
+}
+
+type OpenCanvasReply struct {
+	CanvasSettings CanvasSettings
+}
+
+type GetInkArgs struct {
+	Miner ecdsa.PublicKey
 }
 
 type DeleteShapeArgs struct {
