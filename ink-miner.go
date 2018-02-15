@@ -50,7 +50,8 @@ var neighboursLock = &sync.Mutex{}
 // Network
 var blockTree map[string]*Block
 var serverConn *rpc.Client
-var address string
+var outgoingAddress string
+var incomingAddress string
 
 // Network Instructions
 var minerNetSettings *rpcCommunication.MinerNetSettings
@@ -949,7 +950,7 @@ func inkAvail(miner string, headBlock *Block) (ink uint32) {
 	@return error: ServerConnectionError if connection to server fails
 */
 func registerMinerToServer() error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
+	tcpAddr, err := net.ResolveTCPAddr("tcp", incomingAddress)
 	if err != nil {
 		return ServerConnectionError("resolve tcp error")
 	}
@@ -998,7 +999,7 @@ func getNodes() error {
 		if !doesNeighbourExist(address) {
 			client, err := rpc.Dial(address.Network(), address.String())
 			if err != nil {
-				// if we can not connect to a node, just try the next address
+				// if we can not connect to a node, just try the next outgoingAddress
 				continue
 			} else {
 				inkMiner := InkMiner{}
@@ -1015,8 +1016,8 @@ func getNodes() error {
 
 /*
 	Checks if the current neighbour miner already exists in the list of neighbours
-	@param: address of the new neighbour
-	@return: true if neighbour address is found; false otherwise
+	@param: outgoingAddress of the new neighbour
+	@return: true if neighbour outgoingAddress is found; false otherwise
 */
 func doesNeighbourExist(addr net.Addr) bool {
 	_ , exists := neighbours[addr]
@@ -1050,7 +1051,7 @@ func requestForMoreNodesRoutine() error {
 }
 
 func main() {
-	// ink-miner should take one parameter, which is its address
+	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
@@ -1067,7 +1068,7 @@ func main() {
 		return
 	}
 
-	address = args[0]
+	outgoingAddress = args[0]
 
 	//TODO: verify if this parse is this correct?
 	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
@@ -1096,31 +1097,38 @@ func main() {
 	gob.Register(&elliptic.CurveParams{})
 	gob.Register(elliptic.P224())
 
-	client, err := rpc.Dial("tcp", address)
+	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {
 		// can't proceed without a connection to the server
 		fmt.Printf("miner can not dial to the server")
 		return
 	}
 	serverConn = client
-	if registerMinerToServer() != nil {
-		// can not proceed if it is not register to the server
-		fmt.Printf("miner can not register itself to the server")
-		return
-	}
-	go startHeartBeat()
-
-	go requestForMoreNodesRoutine()
 
 	// Setup RPC
 	server := rpc.NewServer()
 	libMin := new(LibMin)
 	server.Register(libMin)
-	l, e := net.Listen("tcp", address)
+	// need automatic port generation
+	ip := strings.Split(outgoingAddress, ":")
+	l, e := net.Listen("tcp", ip[0] + ":0")
 	if e != nil {
+		fmt.Printf("%v\n", e)
 		return
 	}
 	go server.Accept(l)
+	incomingAddress = l.Addr().String()
+	// Register miner's incomingAddress
+	if registerMinerToServer() != nil {
+		// can not proceed if it is not register to the server
+		fmt.Printf("miner can not register itself to the server")
+		return
+	}
 
+	go startHeartBeat()
+
+	go requestForMoreNodesRoutine()
+
+	//time.Sleep(10 * time.Minute)
 	// TODO - should start mining
 }
