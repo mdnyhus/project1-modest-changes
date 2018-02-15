@@ -40,7 +40,7 @@ var headBlock *Block
 var headBlockLock = &sync.Mutex{}
 
 // Neighbours
-var neighbours []*InkMiner
+var neighbours map[net.Addr]InkMiner
 var neighboursLock = &sync.Mutex{}
 
 // Network
@@ -881,18 +881,18 @@ func getNodes() error {
 
 	neighboursLock.Lock()
 	for _, address := range newNeighbourAddresses {
-		inkMiner := InkMiner{}
-		client, err := rpc.Dial(address.Network(), address.String())
-		if err != nil {
-			// if we can not connect to a node, just try the next address
-			continue
-		}
-
 		// only add it if the neighbor does not already exist
 		if !doesNeighbourExist(address) {
-			inkMiner.conn = client
-			inkMiner.address = address
-			neighbours = append(neighbours, &inkMiner)
+			client, err := rpc.Dial(address.Network(), address.String())
+			if err != nil {
+				// if we can not connect to a node, just try the next address
+				continue
+			} else {
+				inkMiner := InkMiner{}
+				inkMiner.conn = client
+				inkMiner.address = address
+				neighbours[address] = inkMiner
+			}
 		}
 	}
 
@@ -906,13 +906,8 @@ func getNodes() error {
 	@return: true if neighbour address is found; false otherwise
 */
 func doesNeighbourExist(addr net.Addr) bool {
-	for _, inkMiner := range neighbours {
-		if inkMiner.address == addr {
-			// found the ink miner with that address
-			return true
-		}
-	}
-	return false
+	_ , exists := neighbours[addr]
+	return exists
 }
 
 /*
