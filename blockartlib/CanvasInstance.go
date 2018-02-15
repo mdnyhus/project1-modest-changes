@@ -574,6 +574,8 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 // Detects if two edges intersect
 // @param A Edge
 // @param B Edge
+// @bool countTipToTipIntersect bool: False during the check if a shape is simple. Edges that are connected
+// to each other in a shape technically "intersect", so we don't want to return true in these instances.
 // @return bool
 func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 	// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
@@ -622,9 +624,8 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 
 // Checks if the two lines (B represented by its endpoints)
 // only intersect at one of its tips. Private helper function for EdgesIntersect.
-// @param A Edge
-// @param pointB1 Point
-// @param pointB2 Point
+// @param edgeA Edge
+// @param edgeB Edge
 // @return bool
 func onlyIntersectsAtEndPoint(edgeA Edge, edgeB Edge) bool {
 	// to account for corner cases of horizontal/vertical lines,
