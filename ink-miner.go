@@ -476,7 +476,7 @@ func crawlChain(headBlock *BlockMeta, fn func(*BlockMeta, interface{}, interface
 		}
 
 		if isGenesis(*curr) {
-			// Were at the end of the chain.
+			// We are at the end of the chain.
 			break
 		}
 
