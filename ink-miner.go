@@ -52,6 +52,10 @@ var address string
 // Network Instructions
 var minerNetSettings *rpcCommunication.MinerNetSettings
 
+// slice of operation threads' channels that need to know about new blocks
+var opChans = make(map[string](chan *Block))
+var opChansLock = &sync.Mutex{}
+
 // FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
@@ -200,14 +204,37 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 		owner:     "", // TODO - generate owner hash
 	}
 
+	// set up channel for opReceiveNewBlock back result
+	returnChan := make(chan error)
+
+	// ensure hash is unique, even between add and delete shapes
+	opChansKey := args.ShapeMeta.Hash + "a"
+
+	// set up channel to receive new blocks
+	opChansLock.Lock()
+	opChan := make(chan *Block, 1)
+	opChans[opChansKey] = opChan
+	go opReceiveNewBlocks(opChan, returnChan, op, args.ValidateNum)
+	opChansLock.Unlock()
+
+	defer func(opChan chan *Block, returnChan chan error, key string) {
+		// clean up channels
+		close(returnChan)
+		delete(opChans, key)
+		close(opChan)
+	}(opChan, returnChan, opChansKey)
+
 	// receiveNewOp will try to add op to current block and flood op
 	if err = receiveNewOp(op); err != nil {
 		// return error in reply so that it is not cast
 		reply.Error = err
+		return nil
 	}
 
-	// TODO - wait until args.ValidateNum blocks have been added this block before returning
-
+	resultErr := <-returnChan
+	if resultErr != nil {
+		reply.Error = err
+	}
 	return nil
 }
 
@@ -266,13 +293,38 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 		owner:           "", // TODO -  get this from server/global vars
 	}
 
+	// set up channel for opReceiveNewBlock back result
+	returnChan := make(chan error)
+
+	// ensure hash is unique, even between add and delete shapes
+	opChansKey := args.ShapeHash + "d"
+
+	// set up channel to receive new blocks
+	opChansLock.Lock()
+	opChan := make(chan *Block, 1)
+	opChans[opChansKey] = opChan
+	go opReceiveNewBlocks(opChan, returnChan, op, args.ValidateNum)
+	opChansLock.Unlock()
+
+	defer func(opChan chan *Block, returnChan chan error, key string) {
+		// clean up channels
+		close(returnChan)
+		delete(opChans, key)
+		close(opChan)
+	}(opChan, returnChan, opChansKey)
+
 	// receiveNewOp will try to add op to current block and flood op
 	if err = receiveNewOp(op); err != nil {
-		// delete shape can only return a ShapeOwnerError error
+		// return error in reply so that it is not cast
 		reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
+		return nil
 	}
 
-	// TODO - wait until args.ValidateNum blocks have been added this block before returning
+	resultErr := <-returnChan
+	if resultErr != nil {
+		reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
+		return nil
+	}
 
 	// Get ink
 	var getInkArgs int
@@ -356,6 +408,70 @@ func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
 	// TODO
 	*reply = ""
 	return nil
+}
+
+// This helper function receives information about new blocks for the purpose of ensuring an operation
+// is successfully added to the blockchain
+// @param opChan: channel through which new blocks will be sent
+// @param returnChan: channel through which the result of this function should be sent
+// @param op: the op we're trying to get added to the blockchain
+// @param validateNum: the number of blocks required after a block containing op in the blockchain
+//                     for the add to ba success
+func opReceiveNewBlocks(opChan chan *Block, returnChan chan error, op Op, validateNum uint8) {
+	for {
+		block := <-opChan
+		// idea - see if op appears in the chain for this block
+		// if it does, check that validateNum number of blocks have been added on top
+		// if it is not, and this is the new head, resend the block
+		cur := block
+		// can iterate through chain because block has already been validated
+		foundOp := false
+	chainCrawl:
+		for !isGenesis(*cur) {
+			for _, opIter := range cur.ops {
+				if opIter == op {
+					// found the op in this chain
+					foundOp = true
+					if (block.len - cur.len) >= int(validateNum) {
+						// enough blocks have been added
+						returnChan <- nil
+						return
+					}
+
+					break chainCrawl
+				}
+			}
+		}
+
+		if !foundOp && blocksEqual(*block, *headBlock) {
+			// op is not in the longest chain; resend the op and flood it
+			if err := receiveNewOp(op); err != nil {
+				// new longest chain now has a conflict with the
+				// return error in reply so that it is not cast
+				returnChan <- err
+				return
+			}
+		}
+	}
+}
+
+// Compares two blocks, and returns true if they are equal
+// For block.ops, the operations must be in the same order
+// @param block1: the first block to compare
+// @param block2: the second block to compare
+// @return bool: true if the blocks are equal, false otherwise
+func blocksEqual(block1 Block, block2 Block) bool {
+	if block1.prev != block2.prev || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
+		return false
+	}
+
+	for i := 0; i < len(block1.ops); i++ {
+		if block1.ops[i] != block2.ops[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Searches for a shape in the set of local blocks with the given hash.
@@ -1015,7 +1131,7 @@ func getNodes() error {
 	@return: true if neighbour address is found; false otherwise
 */
 func doesNeighbourExist(addr net.Addr) bool {
-	_ , exists := neighbours[addr]
+	_, exists := neighbours[addr]
 	return exists
 }
 
@@ -1034,8 +1150,8 @@ func hasEnoughNeighbours() bool {
 	@returns: error when it fails to reach the server
 */
 func requestForMoreNodesRoutine() error {
-	for range time.Tick(0.5 * time.Second) {
-		if !hasEnoughNeighbours(){
+	for range time.Tick(time.Millisecond * 500) {
+		if !hasEnoughNeighbours() {
 			err := getNodes()
 			if err != nil {
 				return err
