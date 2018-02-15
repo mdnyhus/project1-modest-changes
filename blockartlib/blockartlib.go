@@ -9,6 +9,7 @@ package blockartlib
 
 import (
 	"crypto/ecdsa"
+	"encoding/hex"
 	"fmt"
 	"net/rpc"
 	"os"
@@ -59,6 +60,12 @@ type MinerNetSettings struct {
 
 	// Canvas settings
 	CanvasSettings CanvasSettings
+}
+
+type Hash []byte
+
+func (h Hash) String() string {
+	return hex.EncodeToString(h)
 }
 
 type Point struct {
