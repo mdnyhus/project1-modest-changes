@@ -433,6 +433,7 @@ func opReceiveNewBlocks(opChan chan *Block, returnChan chan error, op Op, valida
 		cur := block
 		// can iterate through chain because block has already been validated
 		foundOp := false
+
 	chainCrawl:
 		for !isGenesis(*cur) {
 			for _, opIter := range cur.ops {
@@ -447,6 +448,13 @@ func opReceiveNewBlocks(opChan chan *Block, returnChan chan error, op Op, valida
 
 					break chainCrawl
 				}
+			}
+
+			var ok bool
+			if cur, ok = blockTree[cur.prev]; !ok {
+				// chain should have been valid, this should never happen
+				// just ignore this block
+				break chainCrawl
 			}
 		}
 
