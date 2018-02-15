@@ -15,11 +15,11 @@ import (
 )
 
 type CanvasInstance struct {
-	canvasSettings CanvasSettings
 	minerAddr      string
 	privKey        ecdsa.PrivateKey
 	client         *rpc.Client
 	settings       CanvasSettings
+	closed         bool
 }
 
 const MAX_SVG_LENGTH = 128
@@ -36,6 +36,10 @@ type Box struct {
 
 // Public Methods
 func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
+	if canvas.closed {
+		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
 	shape, err := convertShape(shapeType, shapeSvgString, fill, stroke)
 	if err != nil {
 		// TODO - deal with any errors convertShape may produce
@@ -60,6 +64,10 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error) {
+	if canvas.closed {
+		return svgString, DisconnectedError(canvas.minerAddr)
+	}
+
 	args := &GetSvgStringArgs{ShapeHash: shapeHash}
 	var reply GetSvgStringReply
 	if canvas.client.Call("LibMin.GetSvgString", args, &reply); err != nil {
@@ -73,6 +81,10 @@ func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, e
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
+	if canvas.closed {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
 	// args are not used for GetInk
 	var args int
 	var reply uint32
@@ -87,6 +99,10 @@ func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
 // @param canvas CanvasInstance
 // @return uint8, string
 func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
+	if canvas.closed {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
 	args := &DeleteShapeArgs{ValidateNum: validateNum, ShapeHash: shapeHash}
 	var reply DeleteShapeReply
 	if canvas.client.Call("LibMin.DeleteShape", args, &reply); err != nil {
@@ -100,6 +116,10 @@ func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (i
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error) {
+	if canvas.closed {
+		return shapeHashes, DisconnectedError(canvas.minerAddr)
+	}
+
 	var reply GetShapesReply
 	if canvas.client.Call("LibMin.GetShapes", &blockHash, &reply); err != nil {
 		return shapeHashes, DisconnectedError(canvas.minerAddr)
@@ -112,6 +132,10 @@ func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, 
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
+	if canvas.closed {
+		return blockHash, DisconnectedError(canvas.minerAddr)
+	}
+
 	var reply string
 	if canvas.client.Call("LibMin.GetGenesisBlock", nil, &reply); err != nil {
 		return blockHash, DisconnectedError(canvas.minerAddr)
@@ -124,6 +148,10 @@ func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string, err error) {
+	if canvas.closed {
+		return blockHashes, DisconnectedError(canvas.minerAddr)
+	}
+
 	var reply GetChildrenReply
 	if canvas.client.Call("LibMin.GetChildren", &blockHash, &reply); err != nil {
 		return blockHashes, DisconnectedError(canvas.minerAddr)
@@ -136,8 +164,11 @@ func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
-	// TODO - stop any future operations on this canvas object
-	// check https://piazza.com/class/jbyh5bsk4ez3cn?cid=428
+	if canvas.closed {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	canvas.closed = true
 
 	// get the ink remaining
 	var reply uint32
@@ -466,29 +497,49 @@ func handleZCase(shape *Shape, currentPoint *Point, startPoint *Point) {
 // @return error err
 func InkUsed(shape *Shape) (ink uint32, err error) {
 	var floatInk float64 = 0
-	// get border length of shape - just add all the edges up!
-	var edgeLength float64 = 0
-	for _, edge := range shape.Edges {
-		edgeLength += getLengthOfEdge(edge)
+	if !shape.FilledIn && shape.BorderColor == TRANSPARENT {
+		return 0, errors.New("Can't have transparent stroke and transparent fill")
 	}
-	// since ink is an int, floor the edge lengths
-	// TODO - why are we flooring it here?
-	floatInk += math.Floor(edgeLength)
 	if shape.FilledIn {
 		// if shape has non-transparent ink, need to find the area of it
 		// According to Ivan, if the shape has non-transparent ink, it'll be a simple closed shape
 		// with no self-intersecting lines. So we can assume this will always be the case.
-		// TODO: Unless assumption confirmed need to change
+		// We need to check if the shape passed in is in fact simple and closed
 		area, err := getAreaOfShape(shape)
-		if err != nil {
+		if err == nil {
 			floatInk += area
-			// TODO - is this not double counting the ink?
 		} else {
 			return 0, err
 		}
+		if !isSimpleShape(shape) {
+			return 0, errors.New("Can't have non-transparent ink if shape has self-intersecting edges")
+		}
+	}
+	if shape.BorderColor != TRANSPARENT {
+		// get border length of shape - just add all the edges up!
+		var edgeLength float64 = 0
+		for _, edge := range shape.Edges {
+			edgeLength += getLengthOfEdge(edge)
+		}
+		floatInk += edgeLength
 	}
 	ink = uint32(floatInk)
 	return ink, nil
+}
+
+// Checks if shape is closed and simple
+// @param shape Shape
+// @return bool
+func isSimpleShape(shape *Shape) bool {
+	// Check if the edges don't self-intersect ("simple")
+	for i := 0; i < len(shape.Edges); i++ {
+		for j := i + 1; j < len(shape.Edges); j++ {
+			if EdgesIntersect(shape.Edges[i], shape.Edges[j], false) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Gets area of shape by going through the edges until you've reached the beginning edge again.
@@ -504,11 +555,13 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 	if err != nil {
 		return 0, errors.New("Couldn't find area of an open shape")
 	}
-
 	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
-	for current.start.x != start.start.x && current.start.y != start.start.y {
+	for start != *current {
 		area += getCrossProduct(current.start, current.end)
 		current, err = findNextEdge(shape, *current)
+		if err != nil {
+			return 0, errors.New("Couldn't find area of an open shape")
+		}
 	}
 
 	return math.Abs(area / 2), nil
@@ -522,20 +575,29 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 	//1. First find if there's an intersection between the edges of the two polygons.
 	for _, edgeA := range A.Edges {
 		for _, edgeB := range B.Edges {
-			if EdgesIntersect(edgeA, edgeB) {
+			if EdgesIntersect(edgeA, edgeB, true) {
 				return true
 			}
 		}
 	}
-	//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-	pointA := A.Edges[0].start
-	if pointInShape(pointA, B, canvasSettings) {
-		return true
+
+	// The following cases test if a shape fully envelopes another shape.
+
+	// Test if B is a closed shape
+	if _, err := getAreaOfShape(&B); err == nil {
+		//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+		pointA := A.Edges[0].start
+		if pointInShape(pointA, B, canvasSettings) {
+			return true
+		}
 	}
-	//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-	pointB := B.Edges[0].start
-	if pointInShape(pointB, A, canvasSettings) {
-		return true
+
+	if _, err := getAreaOfShape(&A); err == nil {
+		//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+		pointB := B.Edges[0].start
+		if pointInShape(pointB, A, canvasSettings) {
+			return true
+		}
 	}
 	//4. If not, then you can conclude that the two polygons are completely outside each other.
 	return false
@@ -544,8 +606,10 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 // Detects if two edges intersect
 // @param A Edge
 // @param B Edge
+// @bool countTipToTipIntersect bool: False during the check if a shape is simple. Edges that are connected
+// to each other in a shape technically "intersect", so we don't want to return true in these instances.
 // @return bool
-func EdgesIntersect(A Edge, B Edge) bool {
+func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 	// https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
 
 	// 1: Check if each edge intersect
@@ -564,8 +628,16 @@ func EdgesIntersect(A Edge, B Edge) bool {
 		end: Point{x: A.end.x - A.start.x, y: A.end.y - A.start.y}}
 	var pointB1 Point = Point{x: B.start.x - A.start.x, y: B.start.y - A.start.y}
 	var pointB2 Point = Point{x: B.end.x - A.start.x, y: B.end.y - A.start.y}
-	if pointsAreOnOrigin(edgeA.end, pointB1) || pointsAreOnOrigin(edgeA.end, pointB2) {
-		return true
+	var edgeB Edge = Edge{start:pointB1, end:pointB2}
+	if pointsAreOnSameLine(edgeA.end, pointB1) || pointsAreOnSameLine(edgeA.end, pointB2) {
+		if !countTipToTipIntersect {
+		// if the endpoints are the only ones touching the edge, don't return true
+			if !onlyIntersectsAtEndPoint(edgeA, edgeB) {
+				return true
+			}
+		} else {
+			return true
+		}
 	}
 	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
 	// if they are, the lines intersect
@@ -578,7 +650,57 @@ func EdgesIntersect(A Edge, B Edge) bool {
 	crossProduct2 := getCrossProduct(Point{x: A.end.x - A.start.x, y: pointB2.x - A.end.x},
 		Point{x: A.end.y - A.start.y, y: pointB2.y - A.end.y})
 	// if intersect, the signs of these cross products will be different
-	return (crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
+	return crossProduct1 != 0 && crossProduct2 != 0 &&
+		(crossProduct1 < 0 || crossProduct2 < 0) && !(crossProduct1 < 0 && crossProduct2 < 0)
+}
+
+// Checks if the two lines (B represented by its endpoints)
+// only intersect at one of its tips. Private helper function for EdgesIntersect.
+// @param edgeA Edge
+// @param edgeB Edge
+// @return bool
+func onlyIntersectsAtEndPoint(edgeA Edge, edgeB Edge) bool {
+	// to account for corner cases of horizontal/vertical lines,
+	// have to check if line is more "vertical" or "horizontal"
+	var pointB1 Point = edgeB.start
+	var pointB2 Point = edgeB.end
+	slopeEdge := math.Abs((edgeA.end.y- edgeA.start.y)/(edgeA.end.x- edgeA.start.x))
+	slopeB := math.Abs((pointB2.y-pointB1.y)/(pointB2.x-pointB1.x))
+	parallel := floatEquals(slopeEdge, slopeB)
+	if pointB1 == edgeA.start || pointB1 == edgeA.end {
+		if parallel {
+			// pointB2 has to be going the opposite direction from edgeA.end
+			if pointB1 == edgeA.start {
+				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
+				slopeEdge = (edgeA.end.y- edgeA.start.y)/(edgeA.end.x- edgeA.start.x)
+				return slopeB == -1 * slopeEdge
+			} else {
+				// pointB2 has to be going the opposite direction from edgeA.start
+				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
+				slopeEdge = (edgeA.start.y- edgeA.end.y)/(edgeA.start.x- edgeA.end.x)
+				return slopeB == -1 * slopeEdge
+			}
+		} else {
+			return true
+		}
+	} else if pointB2 == edgeA.start || pointB2 == edgeA.end {
+		if parallel {
+			// pointB1 has to be going the opposite direction from edgeA.end
+			if pointB2 == edgeA.start {
+				slopeB = (pointB1.y - pointB2.y) / (pointB1.x - pointB2.x)
+				slopeEdge = (edgeA.end.y - edgeA.start.y) / (edgeA.end.x - edgeA.start.x)
+				return slopeB == -1*slopeEdge
+			} else {
+				// pointB1 has to be going the opposite direction from edgeA.start
+				slopeB = (pointB1.y - pointB2.y) / (pointB1.x - pointB2.x)
+				slopeEdge = (edgeA.start.y - edgeA.end.y) / (edgeA.start.x - edgeA.end.x)
+				return slopeB == -1*slopeEdge
+			}
+		} else {
+			return true
+		}
+	}
+	return false
 }
 
 // Builds a bounding box for an edge. Private helper method for EdgesIntersect
@@ -629,7 +751,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 	// if this edge passes through an odd number of edges, the point is in shape
 	intersections := 0
 	for _, e := range shape.Edges {
-		if EdgesIntersect(edge, e) {
+		if EdgesIntersect(edge, e, true) {
 			intersections++
 		}
 	}
@@ -640,7 +762,7 @@ func pointInShape(point Point, shape Shape, settings CanvasSettings) bool {
 // @param A Point
 // @param B Point
 // @return bool
-func pointsAreOnOrigin(A Point, B Point) bool {
+func pointsAreOnSameLine(A Point, B Point) bool {
 	return getCrossProduct(A, B) < EPSILON
 }
 
@@ -670,10 +792,10 @@ func getLengthOfEdge(edge Edge) float64 {
 // @return Edge
 func findNextEdge(shape *Shape, edge Edge) (*Edge, error) {
 	var ret *Edge
-	for _, edge := range shape.Edges {
-		if edge.start.x == edge.end.x &&
-			edge.start.y == edge.end.y {
-			ret = &edge
+	for _, e := range shape.Edges {
+		if e.start.x == edge.end.x &&
+			e.start.y == edge.end.y {
+			ret = &e
 			return ret, nil
 		}
 	}
