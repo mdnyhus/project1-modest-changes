@@ -1056,6 +1056,8 @@ func main() {
 
 	outgoingAddress = args[0]
 
+	// TODO: Uncomment the below:
+
 	//TODO: verify if this parse is this correct?
 	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
 	//if err != nil {
