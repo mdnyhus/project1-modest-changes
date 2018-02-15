@@ -35,7 +35,7 @@ func main() {
 	// TODO - only here to get rid of warnings of unused variables
 	fmt.Println(settings)
 
-    validateNum := uint8(2)
+	validateNum := uint8(2)
 
 	// Add a line.
 	shapeHash, blockHash, ink, err := canvas.AddShape(validateNum, blockartlib.PATH, "M 0 0 L 0 5", "transparent", "red")
