@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -55,9 +56,9 @@ var minerNetSettings *rpcCommunication.MinerNetSettings
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
 type Op struct {
-	shape     *blockartlib.Shape // not nil iff adding shape
-	shapeHash string             // non-empty iff removing shape
-	owner     string             // hash of pub/priv keys
+	shapeMeta       *blockartlib.ShapeMeta // not nil iff adding shape
+	deleteShapeHash string                 // non-empty iff removing shape
+	owner           string                 // hash of pub/priv keys
 }
 
 type Block struct {
@@ -132,9 +133,8 @@ func (m *MinMin) NotifyNewOp(op *Op, reply *bool) (err error) {
 	return nil
 }
 
-// TODO RPC calls feel a bit burdensome here.
 // Receives block flood calls. Verifies chains. Updates head block if new chain is acknowledged.
-// LOCKS: Calls headBlockLock()
+// LOCKS: Acquires and releases headBlockLock
 // @param block *Block: Block which was added to chain.
 // @param reply *bool: Bool indicating success of RPC.
 // @return error: Any errors produced during new block processing.
@@ -146,7 +146,7 @@ func (m *MinMin) NotifyNewBlock(block *Block, reply *bool) error {
 
 	*reply = false
 
-	// the crawl by default does all the work we need, so no special helper/args/reply is required
+	// Verify chain.
 	var inter interface{}
 	if err := crawlChain(block, nil, inter, inter); err != nil {
 		return err
@@ -195,12 +195,11 @@ func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) 
 // Adds a new shape ot the canvas
 // @param args *blockartlib.AddShapeArgs: contains the shape to be added, and the validateNum
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
-// @return err error: Any errors produced
+// @return error: Any errors produced
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
 	// construct Op for shape
 	op := Op{
-		shape:     &args.Shape,
-		shapeHash: "",
+		shapeMeta: &args.ShapeMeta,
 		owner:     "", // TODO - generate owner hash
 	}
 
@@ -256,7 +255,7 @@ func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
 	return nil
 }
 
-// Deletes the shape associated with the passed shapeHash, if it exists and is owned by this miner.
+// Deletes the shape associated with the passed deleteShapeHash, if it exists and is owned by this miner.
 // args.ValidateNum specifies the number of blocks (no-op or op) that must follow the block with this
 // operation in the block-chain along the longest path before the operation can return successfully.
 // @param args *blockartlib.DeleteShapeArgs: contains the ValidateNum and ShapeHash
@@ -265,9 +264,9 @@ func (l *LibMin) GetInk(args *int, reply *uint32) (err error) {
 func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
 	// construct Op for deletion
 	op := Op{
-		shape:     nil,
-		shapeHash: args.ShapeHash,
-		owner:     "", // TODO -  get this from server/global vars
+		shapeMeta:       nil,
+		deleteShapeHash: args.ShapeHash,
+		owner:           "", // TODO -  get this from server/global vars
 	}
 
 	// receiveNewOp will try to add op to current block and flood op
@@ -301,9 +300,9 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 
 	for _, op := range block.ops {
 		// add op's hash to reply.ShapeHashes
-		hash := op.shapeHash
-		if op.shape != nil {
-			hash = op.shape.Hash
+		hash := op.deleteShapeHash
+		if op.shapeMeta != nil {
+			hash = op.shapeMeta.Hash
 		}
 		reply.ShapeHashes = append(reply.ShapeHashes, hash)
 	}
@@ -364,17 +363,17 @@ func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
 
 // Searches for a shape in the set of local blocks with the given hash.
 // Note: this function does not care whether the shape was later deleted
-// @param shapeHash string: hash of shape that is being searched for
-// @return shape *blockartlib.Shape: found shape whose hash matches shapeHash; nil if it does not
+// @param deleteShapeHash string: hash of shape that is being searched for
+// @return shape *blockartlib.Shape: found shape whose hash matches deleteShapeHash; nil if it does not
 //                                   exist or was deleted
-func findShape(shapeHash string) (shape *blockartlib.Shape) {
+func findShape(deleteShapeHash string) (shape *blockartlib.Shape) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
 	for _, block := range blockTree {
 		// search through the block, searching for the add op for a shape with this hash
 		for _, op := range block.ops {
-			if op.shape != nil && op.shape.Hash == shapeHash {
+			if op.shapeMeta != nil && op.shapeMeta.Hash == deleteShapeHash {
 				// shape was found
-				return op.shape
+				return &op.shapeMeta.Shape
 				// keep searching through the block in case it is later deleted
 			}
 		}
@@ -502,7 +501,6 @@ func crawlChainHelperGetBlock(hash string) (block *Block) {
 	return nil
 }
 
-// TODO
 // Validates the FIRST block in the slice, ASSUMING that all other blocks in the
 // chain have already been validated
 // @param chain []*Block: the block chain. The first element in the slice is the
@@ -510,10 +508,13 @@ func crawlChainHelperGetBlock(hash string) (block *Block) {
 //                        (and thus the last block should be the Genesis block)
 // @return err error: any errors from validation; nil if block is valid
 func validateBlock(chain []*Block) (err error) {
-	// TODO
-	// TODO Kamil - in shape equal, compare every shape field except the hash and timestamp
-	// you can verify the hash by hashing with the timestamp
-	// For questions, ask Matthew
+	if err = verifyBlockHash(hashBlock(*chain[0])); err != nil {
+		return err
+	}
+	if err = verifyOps(*chain[0]); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -536,9 +537,112 @@ func hashBlock(block Block) string {
 
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
-func verifyHash(hash string) bool {
+// @return bool: True iff valid.
+func verifyBlockHash(hash string) error {
 	n := int(minerNetSettings.PoWDifficultyOpBlock)
-	return hash[len(hash)-n:] == strings.Repeat("0", n)
+	if hash[len(hash)-n:] == strings.Repeat("0", n) {
+		return nil
+	}
+	return blockartlib.InvalidBlockHashError(hash)
+}
+
+// Verifies that all ops are valid and no shape conflicts exist against blockchain canvas.
+// @param ops []Op: Slice of ops to verify.
+// @return error: nil iff valid.
+func verifyOps(block Block) error {
+	verificationChan := make(chan error, 1)
+	for i, op := range block.ops {
+		if err := validateShape(op.shapeMeta); err != nil {
+			return err
+		}
+
+		// Ensure op does not conflict with previous ops.
+		for j := 0; j < i; j++ {
+			if jOp := block.ops[j]; op.owner != jOp.owner {
+				if blockartlib.ShapesIntersect(op.shapeMeta.Shape, jOp.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
+					return blockartlib.ShapeOverlapError(op.shapeMeta.Hash)
+				}
+			}
+		}
+		go verifyOp(op, blockTree[block.prev], verificationChan)
+	}
+
+	pendingVerifications := len(block.ops)
+	for pendingVerifications != 0 {
+		err := <-verificationChan
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Verifies an op against all previous ops in the blockchain. Assumes all previous blocks in chain are valid.
+// LOCKS: Acquires headBlockLock.
+// @param candidateOp Op: The op to verify.
+// @param block *Block: The headBlock on which to begin the verification.
+// @param ch chan<-error: The channel to which verification errors are piped into, or nil if no errors are found.
+func verifyOp(candidateOp Op, block *Block, ch chan<- error) {
+	headBlockLock.Lock()
+	defer headBlockLock.Unlock()
+
+	// Verify op with shape.
+	if candidateOp.shapeMeta != nil {
+		shape := candidateOp.shapeMeta.Shape
+		// Ensure svg string isn't beyond the maximum specified length.
+		if svg := shape.Svg; blockartlib.IsSvgTooLong(svg) {
+			ch <- blockartlib.ShapeSvgStringTooLongError(svg)
+			return
+		}
+
+		// Ensure shape is on the canvas.
+		if !blockartlib.IsShapeInCanvas(shape) {
+			ch <- blockartlib.OutOfBoundsError{}
+			return
+		}
+
+		// Ensure miner has enough ink.
+		ink, err := blockartlib.InkUsed(&shape)
+		inkAvail := inkAvail(candidateOp.owner, headBlock)
+		if err != nil || inkAvail < ink {
+			ch <- blockartlib.InsufficientInkError(inkAvail)
+			return
+		}
+
+		// Ensure shape does not overlap with other ops in the chain.
+		curr := block
+		for {
+			for _, op := range curr.ops {
+				if candidateOp.owner != op.owner {
+					if blockartlib.ShapesIntersect(shape, op.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
+						ch <- blockartlib.ShapeOverlapError(candidateOp.shapeMeta.Hash)
+						return
+					}
+				}
+			}
+
+			// Exit loop once we verify no overlap conflicts in the genesis block.
+			if isGenesis(*curr) {
+				break
+			}
+
+			var ok bool
+			curr, ok = blockTree[curr.prev]
+			if !ok {
+				ch <- blockartlib.InvalidBlockHashError(curr.prev)
+				return
+			}
+		}
+		// Verify deletion op.
+	} else {
+		if err := shapeExists(candidateOp.deleteShapeHash, candidateOp.owner, block); err != nil {
+			ch <- err
+			return
+		}
+	}
+	ch <- nil
+	return
 }
 
 // TODO this and floodBlock currentl share almost all the code. If worth it, call helper
@@ -574,6 +678,7 @@ func floodOp(op Op) {
 }
 
 // Sends block to all neighbours.
+// LOCKS: Acquires and releases neighboursLock.
 // @param block Block: Block to be broadcast.
 func floodBlock(block Block) {
 	// Prevent other processes from adding/removing neighbours.
@@ -628,8 +733,11 @@ func receiveNewOp(op Op) (err error) {
 	defer blockLock.Unlock()
 
 	// check if op is valid
-	if err = validateOp(op, currBlock); err != nil {
-		// if not, return the error
+	verifyCh := make(chan error, 1)
+	verifyOp(op, currBlock, verifyCh)
+
+	err = <-verifyCh
+	if err != nil {
 		return err
 	}
 
@@ -642,65 +750,68 @@ func receiveNewOp(op Op) (err error) {
 	return nil
 }
 
-// Validates an operation. Returned error is nil if op is valid starting at
-// headBlock; false otherwise.
-// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param op Op: Op to be validated.
-// @param headBlock *Block: head block of chain from which ink will be calculated
-// @return err error: nil if op is valid; otherwise can return one of the following errors:
-//  	- InsufficientInkError
-// 		- ShapeOverlapError
-// 		- OutOfBoundsError
-func validateOp(op Op, headBlock *Block) (err error) {
-	if op.shape != nil {
-		if e := validateShape(op.shape); e != nil {
-			return e
-		}
-	}
-
-	if op.shape != nil {
-		// check if miner has enough ink only if op is owned by this miner
-		// and if shape is not being deleted
-		ink, err := blockartlib.InkUsed(op.shape)
-		inkAvail := inkAvail(op.owner, headBlock)
-		if err != nil || inkAvail < ink {
-			// not enough ink
-			return blockartlib.InsufficientInkError(inkAvail)
-		}
-	}
-
-	if op.shape != nil {
-		if hash := shapeOverlaps(op.shape, headBlock); hash != "" {
-			// op is adding a shape that intersects with an already present shape; reject
-			return blockartlib.ShapeOverlapError(hash)
-		}
-	}
-
-	if op.shape == nil {
-		if e := shapeExists(op.shapeHash, op.owner, headBlock); e != nil {
-			// Op is trying to delete a shape that does not exist or that does not belong
-			// to op.owner
-			return e
-		}
-	}
-
-	return nil
-}
-
-// TODO
 // Checks if the passed shape is valid according to the spec
 // Returned error is nil if shape is valid; otherwise, check the error
-// - TODO shape fill spec re. convex or self-intersections
 // - shape points are within the canvas
-// @param shape *blockartlib.Shape: pointer to shape that will be validated
-// @return err error: Error indicating if shape is valid. Can be nil or one
-//                    of the following errors:
-// 						- OutOfBoundsError
-func validateShape(shape *blockartlib.Shape) (err error) {
-	// TODO
-	// TODO Kamil - in shape equal, compare every shape field except the hash and timestamp
-	// you can verify the hash by hashing with the timestamp
-	// For questions, ask Matthew
+// @param candidateShapeMeta *blockartlib.ShapeMeta: Shape that will be validated.
+// @return err error: Error indicating if shape is valid.
+func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
+	candidateShape := candidateShapeMeta.Shape
+
+	// Ensure hash is correct.
+	if candidateShapeMeta.Hash != blockartlib.HashShape(candidateShape) {
+		// TODO: No custom error type?
+		return blockartlib.OutOfBoundsError{}
+	}
+
+	// Ensure shape properties correspond to the svg path.
+	shape, err := blockartlib.ParseSvgPath(candidateShape.Svg)
+	if err != nil {
+		return err
+	}
+
+	if shape.FilledIn != candidateShape.FilledIn {
+		return blockartlib.OutOfBoundsError{}
+	}
+
+	if shape.FillColor != candidateShape.FillColor {
+		return blockartlib.OutOfBoundsError{}
+	}
+
+	if shape.BorderColor != candidateShape.BorderColor {
+		return blockartlib.OutOfBoundsError{}
+	}
+
+	if len(shape.Edges) != len(candidateShape.Edges) {
+		return blockartlib.OutOfBoundsError{}
+	}
+
+	candidateEdges := candidateShape.Edges
+	sort.Sort(blockartlib.Edges(candidateEdges))
+	edges := shape.Edges
+	sort.Sort(blockartlib.Edges(shape.Edges))
+
+	for _, e1 := range edges {
+		for _, e2 := range candidateEdges {
+			if e1 != e2 {
+				return blockartlib.OutOfBoundsError{}
+			}
+		}
+	}
+
+	// Ensure accuracy of Ink parameter.
+	ink, err := blockartlib.InkUsed(shape)
+	if err != nil {
+		return err
+	}
+
+	if ink != candidateShape.Ink {
+		return blockartlib.OutOfBoundsError{}
+	}
+
+	// TODO: Check if shape is self-intersecting. Depends on Justin's PR.
+	//       Invoke function `isSimpleShape`
+
 	return blockartlib.OutOfBoundsError{}
 }
 
@@ -725,16 +836,16 @@ func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash
 // Returned error is nil if shape does exist and is owned by owner, otherwise returns
 // a non-nil error
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param shapeHash string: hash of shape to check
+// @param deleteShapeHash string: hash of shape to check
 // @param owner string: string identfying miner
 // @param headBlock *Block: head block of chain from which ink will be calculated
 // @return err error: Error indicating if shape is valid. Can be nil or one
 //                    of the following errors:
 // 						- ShapeOwnerError
 //						- TODO - error if shape does not exist?
-func shapeExists(shapeHash string, ownder string, headBlock *Block) (err error) {
+func shapeExists(deleteShapeHash string, ownder string, headBlock *Block) (err error) {
 	// TODO
-	return blockartlib.ShapeOwnerError(shapeHash)
+	return blockartlib.ShapeOwnerError(deleteShapeHash)
 }
 
 ///////////////////////////////////////////////////////////
@@ -749,7 +860,7 @@ type inkAvailCrawlReply struct {
 	ink                uint32
 }
 
-// Checks the block for a shape with the passed args.shapeHash
+// Checks the block for a shape with the passed args.deleteShapeHash
 // If the shape was ever added, set reply.shape to the shape.
 // Also count how many times the shape was added
 // This function should be used when the default behaviour of crawlChain is sufficient
@@ -775,24 +886,24 @@ func inkAvailCrawlHelper(block *Block, args interface{}, reply interface{}) (don
 	// for simplicity, iterate through the block twice
 	// first, look only for delete operations
 	for _, op := range block.ops {
-		if op.shapeHash != "" && op.owner == crawlArgs.miner {
+		if op.deleteShapeHash != "" && op.owner == crawlArgs.miner {
 			// shape was removed and owned by this miner
-			crawlReply.removedShapeHashes = append(crawlReply.removedShapeHashes, op.shapeHash)
+			crawlReply.removedShapeHashes = append(crawlReply.removedShapeHashes, op.deleteShapeHash)
 		}
 	}
 
 	// second, look only for added operations
 	for _, op := range block.ops {
-		if op.shape != nil && op.owner == crawlArgs.miner {
+		if op.shapeMeta != nil && op.owner == crawlArgs.miner {
 			// shape was added and owned by this miner
-			index := searchSlice(op.shape.Hash, crawlReply.removedShapeHashes)
+			index := searchSlice(op.shapeMeta.Hash, crawlReply.removedShapeHashes)
 			if index >= 0 && index < len(crawlReply.removedShapeHashes) {
 				// shape was later removed; do not charge for ink
-				// remove shapeHash from the list of removedShapeHashes
+				// remove deleteShapeHash from the list of removedShapeHashes
 				crawlReply.removedShapeHashes = append(crawlReply.removedShapeHashes[:index], crawlReply.removedShapeHashes[index+1:]...)
 			} else {
 				// shape was not removed
-				crawlReply.ink -= op.shape.Ink
+				crawlReply.ink -= op.shapeMeta.Shape.Ink
 			}
 		}
 	}
