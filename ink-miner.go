@@ -30,9 +30,6 @@ import (
 )
 
 // Static
-var canvasSettings blockartlib.CanvasSettings
-var minConn int
-var n int // Num 0's required in POW
 var publicKey ecdsa.PublicKey
 var privateKey ecdsa.PrivateKey
 
@@ -196,6 +193,7 @@ type LibMin int
 // @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
 // @return error: Any errors produced
 func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib.OpenCanvasReply) (err error) {
+	// Ensure art node has proper private & public keys.
 	if args.Priv != privateKey || args.Pub != publicKey {
 		return blockartlib.DisconnectedError("")
 	}
@@ -208,8 +206,6 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
 // @return error: Any errors produced
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
-	// TODO Add ink checks, other op validation.
-
 	timestamp := time.Now()
 	hash := hashString(timestamp.String() + args.ShapeMeta.Hash)
 	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
