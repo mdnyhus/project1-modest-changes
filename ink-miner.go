@@ -185,9 +185,6 @@ type LibMin int
 // @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
 // @return error: Any errors produced
 func (l *LibMin) GetCanvasSettings(args int, reply *blockartlib.CanvasSettings) (err error) {
-	if minerNetSettings == nil {
-		return MinerSettingNotFound("miner could not find a network setting")
-	}
 	*reply = minerNetSettings.CanvasSettings
 	return nil
 }
@@ -317,7 +314,7 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 // @param err error: Any errors produced
 func (l *LibMin) GetGenesisBlock(args *int, reply *string) (err error) {
 	if minerNetSettings.GenesisBlockHash == "" {
-		return GensisBlockNotFound("can not get geneis block")
+		return GensisBlockNotFound("can not get genesis block")
 	}
 	*reply = minerNetSettings.GenesisBlockHash
 	return nil
@@ -972,6 +969,7 @@ func startHeartBeat() error {
 		// passing the miners public key and a dummy reply
 		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
 		if clientErr != nil {
+			//TODO: what do we want to do if the rpc call fails
 			return ServerConnectionError("heartbeat failure")
 		}
 	}
@@ -1026,14 +1024,7 @@ func doesNeighbourExist(addr net.Addr) bool {
 	@return: Returns true if the miner has enough neighbours
 */
 func hasEnoughNeighbours() bool {
-	hasEnough := false
-	neighboursLock.Lock()
-	// checking the neighbours settings
-	if len(neighbours) >= int(minerNetSettings.MinNumMinerConnections) {
-		hasEnough = true
-	}
-	neighboursLock.Unlock()
-	return hasEnough
+	return len(neighbours) >= int(minerNetSettings.MinNumMinerConnections)
 }
 
 /*
@@ -1043,7 +1034,7 @@ func hasEnoughNeighbours() bool {
 	@returns: error when it fails to reach the server
 */
 func requestForMoreNodesRoutine() error {
-	for range time.Tick(1 * time.Second) {
+	for range time.Tick(0.5 * time.Second) {
 		if !hasEnoughNeighbours(){
 			err := getNodes()
 			if err != nil {
