@@ -1052,6 +1052,7 @@ func registerMinerToServer() error {
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
 	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
 	if clientErr != nil {
+		fmt.Println(clientErr)
 		return ServerConnectionError("registration failure ")
 	}
 	return nil
@@ -1189,9 +1190,14 @@ func main() {
 	publicKey = privKey.PublicKey
 	privateKey = privKey
 
+
+	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 	gob.Register(elliptic.P224())
+	gob.Register(elliptic.P256())
+	gob.Register(elliptic.P384())
+	gob.Register(elliptic.P521())
 
 	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {

@@ -144,7 +144,12 @@ func readConfigOrDie(path string) {
 func main() {
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
-	gob.Register(elliptic.P224()) // TODO: not sure if we can add anything to server.go
+
+	// https://piazza.com/class/jbyh5bsk4ez3cn?cid=396
+	gob.Register(elliptic.P224())
+	gob.Register(elliptic.P256())
+	gob.Register(elliptic.P384())
+	gob.Register(elliptic.P521())
 
 	path := flag.String("c", "", "Path to the JSON config")
 	flag.Parse()
