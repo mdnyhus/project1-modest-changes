@@ -16,7 +16,7 @@ import (
 	"./proj1-server/rpcCommunication"
 	"crypto/ecdsa"
 	"crypto/md5"
-	"crypto/x509"
+	//"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -26,6 +26,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/gob"
 )
 
 // Static
@@ -938,7 +941,7 @@ func registerMinerToServer() error {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		return ServerConnectionError("registration failure ")
 	}
@@ -1021,8 +1024,8 @@ func hasEnoughNeighbours() bool {
 	@returns: error when it fails to reach the server
 */
 func requestForMoreNodesRoutine() error {
-	for range time.Tick(0.5 * time.Second) {
-		if !hasEnoughNeighbours() {
+	for range time.Tick(500 * time.Millisecond) {
+		if !hasEnoughNeighbours(){
 			err := getNodes()
 			if err != nil {
 				return err
@@ -1037,7 +1040,7 @@ func main() {
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 3
+	numArgs := 1
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1053,22 +1056,32 @@ func main() {
 	address = args[0]
 
 	//TODO: verify if this parse is this correct?
-	parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
-	if err != nil {
-		// can't proceed without a proper public key
-		fmt.Printf("miner needs a valid public key")
-		return
-	}
+	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
+	//if err != nil {
+	//	// can't proceed without a proper public key
+	//	fmt.Printf("miner needs a valid public key")
+	//	return
+	//}
+	//
+	//parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
+	//if err != nil {
+	//	// can't proceed without a proper private key
+	//	fmt.Printf("miner needs a valid private key")
+	//	return
+	//}
+	//
+	//publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	//privateKey = *parsedPrivateKey
 
-	parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
-	if err != nil {
-		// can't proceed without a proper private key
-		fmt.Printf("miner needs a valid private key")
-		return
-	}
+	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	privKey := *keyPointer
+	publicKey = privKey.PublicKey
+	privateKey = privKey
 
-	publicKey = parsedPublicKey.(ecdsa.PublicKey)
-	privateKey = *parsedPrivateKey
+	gob.Register(&net.TCPAddr{})
+	gob.Register(&elliptic.CurveParams{})
+	gob.Register(elliptic.P224())
+
 	client, err := rpc.Dial("tcp", address)
 	if err != nil {
 		// can't proceed without a connection to the server
