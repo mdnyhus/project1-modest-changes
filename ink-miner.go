@@ -361,7 +361,7 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 // @param reply *uint32: hash of genesis block
 // @param err error: Any errors produced
 func (l *LibMin) GetGenesisBlock(args *int, reply *blockartlib.Hash) (err error) {
-	if compareHashes(minerNetSettings.GenesisBlockHash, blockartlib.Hash([]byte{})) {
+	if minerNetSettings.GenesisBlockHash.String() == blockartlib.Hash([]byte{}).String() {
 		return GensisBlockNotFound("")
 	}
 	*reply = minerNetSettings.GenesisBlockHash
@@ -544,7 +544,7 @@ func validateBlock(chain []*BlockMeta) (err error) {
 	blockMeta := *chain[0]
 
 	// Verify hash.
-	if compareHashes(hashBlock(blockMeta.block), blockMeta.hash) {
+	if hashBlock(blockMeta.block).String(), blockMeta.hash.String() {
 		return blockartlib.InvalidBlockHashError(blockMeta.hash)
 	}
 	// Verify block signature.
@@ -570,16 +570,7 @@ func isGenesis(blockMeta BlockMeta) bool {
 	block := blockMeta.block
 	// TODO: What is gensis def'n? Who signs it?
 	// TODO: def'n of Genesis block? ---> Is this the proper hash
-	return string(block.prev) == "" && compareHashes(hashBlock(block), minerNetSettings.GenesisBlockHash)
-}
-
-// Returns true iff hashes a and b are equivalent.
-// @param a Hash: First hash to be compared.
-// @param b Hash: Second hash to be compared.
-// @return bool: true iff a and b are equal.
-func compareHashes(a blockartlib.Hash, b blockartlib.Hash) bool {
-	// TODO: Replace me with all string castings.
-	return false
+	return string(block.prev) == "" && hashBlock(block).String(), minerNetSettings.GenesisBlockHash.String()
 }
 
 // TODO: Might not be worth doing, but do we need seperate hash functions?
