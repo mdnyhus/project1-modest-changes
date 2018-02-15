@@ -347,17 +347,6 @@ func (l *LibMin) GetChildren(args *string, reply *blockartlib.GetChildrenReply) 
 	return nil
 }
 
-// TODO
-// Closes the canvas
-// @param args args *int: dummy argument that is not used
-// @param reply *uint32: hash of genesis block
-// @param err error: Any errors produced
-func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
-	// TODO
-	*reply = ""
-	return nil
-}
-
 // Searches for a shape in the set of local blocks with the given hash.
 // Note: this function does not care whether the shape was later deleted
 // @param deleteShapeHash string: hash of shape that is being searched for

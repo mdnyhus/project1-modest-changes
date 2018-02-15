@@ -19,6 +19,7 @@ type CanvasInstance struct {
 	privKey        ecdsa.PrivateKey
 	client         *rpc.Client
 	settings       CanvasSettings
+	closed         bool
 }
 
 const MAX_SVG_LENGTH = 128
@@ -35,6 +36,10 @@ type Box struct {
 
 // Public Methods
 func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, shapeSvgString string, fill string, stroke string) (shapeHash string, blockHash string, inkRemaining uint32, err error) {
+	if canvas.closed {
+		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
 	shape, err := convertShape(shapeType, shapeSvgString, fill, stroke)
 	if err != nil {
 		// TODO - deal with any errors convertShape may produce
@@ -59,6 +64,10 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, err error) {
+	if canvas.closed {
+		return svgString, DisconnectedError(canvas.minerAddr)
+	}
+
 	args := &GetSvgStringArgs{ShapeHash: shapeHash}
 	var reply GetSvgStringReply
 	if canvas.client.Call("LibMin.GetSvgString", args, &reply); err != nil {
@@ -72,6 +81,10 @@ func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, e
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
+	if canvas.closed {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
 	// args are not used for GetInk
 	var args int
 	var reply uint32
@@ -86,6 +99,10 @@ func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
 // @param canvas CanvasInstance
 // @return uint8, string
 func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (inkRemaining uint32, err error) {
+	if canvas.closed {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
 	args := &DeleteShapeArgs{ValidateNum: validateNum, ShapeHash: shapeHash}
 	var reply DeleteShapeReply
 	if canvas.client.Call("LibMin.DeleteShape", args, &reply); err != nil {
@@ -99,6 +116,10 @@ func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (i
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, err error) {
+	if canvas.closed {
+		return shapeHashes, DisconnectedError(canvas.minerAddr)
+	}
+
 	var reply GetShapesReply
 	if canvas.client.Call("LibMin.GetShapes", &blockHash, &reply); err != nil {
 		return shapeHashes, DisconnectedError(canvas.minerAddr)
@@ -111,6 +132,10 @@ func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, 
 // @param canvas CanvasInstance
 // @return string, error
 func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
+	if canvas.closed {
+		return blockHash, DisconnectedError(canvas.minerAddr)
+	}
+
 	var reply string
 	if canvas.client.Call("LibMin.GetGenesisBlock", nil, &reply); err != nil {
 		return blockHash, DisconnectedError(canvas.minerAddr)
@@ -123,6 +148,10 @@ func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
 // @param canvas CanvasInstance
 // @return []string, error
 func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string, err error) {
+	if canvas.closed {
+		return blockHashes, DisconnectedError(canvas.minerAddr)
+	}
+
 	var reply GetChildrenReply
 	if canvas.client.Call("LibMin.GetChildren", &blockHash, &reply); err != nil {
 		return blockHashes, DisconnectedError(canvas.minerAddr)
@@ -135,8 +164,11 @@ func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string
 // @param canvas CanvasInstance
 // @return uint32, error
 func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
-	// TODO - stop any future operations on this canvas object
-	// check https://piazza.com/class/jbyh5bsk4ez3cn?cid=428
+	if canvas.closed {
+		return inkRemaining, DisconnectedError(canvas.minerAddr)
+	}
+
+	canvas.closed = true
 
 	// get the ink remaining
 	var reply uint32
