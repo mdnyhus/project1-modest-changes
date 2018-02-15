@@ -15,9 +15,10 @@ import (
 	"./blockartlib"
 	"./proj1-server/rpcCommunication"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/md5"
 	"crypto/rand"
-	"encoding/hex"
+	"encoding/gob"
 	"fmt"
 	"math/big"
 	"net"
@@ -27,8 +28,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"crypto/elliptic"
-	"encoding/gob"
 )
 
 // Static
@@ -62,7 +61,7 @@ var ink int // TODO Do we want this? Or do we want a func that scans blockchain 
 type OpMeta struct {
 	hash blockartlib.Hash
 	r, s big.Int
-	op Op
+	op   Op
 }
 
 type Op struct {
@@ -76,8 +75,8 @@ func (o Op) String() string {
 }
 
 type BlockMeta struct {
-	hash blockartlib.Hash
-	r, s big.Int // signature of the miner that mined this block.
+	hash  blockartlib.Hash
+	r, s  big.Int // signature of the miner that mined this block.
 	block Block
 }
 
@@ -220,16 +219,8 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
 // @return error: Any errors produced
 func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
-	timestamp := time.Now()
-	hash := hashString(timestamp.String() + args.ShapeMeta.Hash)
-	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
-	if err != nil {
-		return err
-	}
-
 	// construct Op for shape
 	op := Op{
-		timestamp: timestamp,
 		shapeMeta: &args.ShapeMeta,
 		owner:     publicKey,
 	}
@@ -242,9 +233,9 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 
 	opMeta := OpMeta{
 		hash: hash,
-		r: *r,
-		s: *s,
-		op: op,
+		r:    *r,
+		s:    *s,
+		op:   op,
 	}
 
 	// receiveNewOp will try to add op to current block and flood op
@@ -305,14 +296,6 @@ func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error)
 // @param err error: Any errors produced
 func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
 	// construct Op for deletion
-
-	timestamp := time.Now()
-	hash := hashString(timestamp.String() + args.ShapeHash)
-	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
-	if err != nil {
-		return err
-	}
-
 	op := Op{
 		deleteShapeHash: args.ShapeHash,
 		owner:           publicKey,
@@ -326,9 +309,9 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 
 	opMeta := OpMeta{
 		hash: hash,
-		r: *r,
-		s: *s,
-		op: op,
+		r:    *r,
+		s:    *s,
+		op:   op,
 	}
 
 	// receiveNewOp will try to add op to current block and flood op
@@ -561,7 +544,7 @@ func validateBlock(chain []*BlockMeta) (err error) {
 	blockMeta := *chain[0]
 
 	// Verify hash.
-	if hashBlock(blockMeta.block).String(), blockMeta.hash.String() {
+	if hashBlock(blockMeta.block).String() != blockMeta.hash.String() {
 		return blockartlib.InvalidBlockHashError(blockMeta.hash)
 	}
 	// Verify block signature.
@@ -587,7 +570,7 @@ func isGenesis(blockMeta BlockMeta) bool {
 	block := blockMeta.block
 	// TODO: What is gensis def'n? Who signs it?
 	// TODO: def'n of Genesis block? ---> Is this the proper hash
-	return string(block.prev) == "" && hashBlock(block).String(), minerNetSettings.GenesisBlockHash.String()
+	return string(block.prev) == "" && hashBlock(block).String() == minerNetSettings.GenesisBlockHash.String()
 }
 
 // TODO: Might not be worth doing, but do we need seperate hash functions?
@@ -1152,7 +1135,7 @@ func hasEnoughNeighbours() bool {
 */
 func requestForMoreNodesRoutine() error {
 	for range time.Tick(500 * time.Millisecond) {
-		if !hasEnoughNeighbours(){
+		if !hasEnoughNeighbours() {
 			err := getNodes()
 			if err != nil {
 				return err
@@ -1207,7 +1190,6 @@ func main() {
 	publicKey = privKey.PublicKey
 	privateKey = privKey
 
-
 	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
@@ -1230,7 +1212,7 @@ func main() {
 	server.Register(libMin)
 	// need automatic port generation
 	ip := strings.Split(outgoingAddress, ":")
-	l, e := net.Listen("tcp", ip[0] + ":0")
+	l, e := net.Listen("tcp", ip[0]+":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
