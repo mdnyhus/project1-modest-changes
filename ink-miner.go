@@ -1039,6 +1039,7 @@ func hasEnoughNeighbours() bool {
 /*
 	Routine for the ink miner to request for more nodes when
 	it has less than the min number of miners
+	Currently running this routine every second to not kill cpu
 	@returns: error when it fails to reach the server
 */
 func requestForMoreNodesRoutine() error {
