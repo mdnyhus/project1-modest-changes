@@ -13,9 +13,10 @@ package main
 
 import (
 	"./blockartlib"
+	"crypto/rand"
 	"crypto/ecdsa"
 	"crypto/md5"
-	"crypto/rand"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -44,13 +45,16 @@ var headBlock *Block
 var headBlockLock = &sync.Mutex{}
 
 // Neighbours
-var neighbours []*InkMiner
+var neighbours = make(map[net.Addr]InkMiner)
 var neighboursLock = &sync.Mutex{}
 
 // Network
 var blockTree map[string]*Block
 var serverConn *rpc.Client
 var address string
+
+// Network Instructions
+var minerNetSettings *rpcCommunication.MinerNetSettings
 
 // FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
@@ -80,7 +84,8 @@ func (b Block) String() string {
 }
 
 type InkMiner struct {
-	conn *rpc.Client
+	conn    *rpc.Client
+	address net.Addr
 }
 
 // RPC type responsible for Miner-to-Miner communcation.
@@ -96,6 +101,30 @@ type BlockVerificationError string
 
 func (e BlockVerificationError) Error() string {
 	return fmt.Sprintf("InkMiner: Block with hash %s could not be verified", string(e))
+}
+
+type ServerConnectionError string
+
+func (e ServerConnectionError) Error() string {
+	return fmt.Sprintf("InkMiner: Could not connect to server for %s", string(e))
+}
+
+type KeyParseError string
+
+func (e KeyParseError) Error() string {
+	return fmt.Sprintf("InkMiner: Could not connect to server for %s", string(e))
+}
+
+type GensisBlockNotFound string
+
+func (e GensisBlockNotFound) Error() string {
+	return fmt.Sprintf("InkMiner: Could not find gensis block for %s", string(e))
+}
+
+type MinerSettingNotFound string
+
+func (e MinerSettingNotFound) Error() string {
+	return fmt.Sprintf("InkMiner: Could not find miner setting for %s", string(e))
 }
 
 // Receives op block flood calls. Verifies the op, which will add the op to currBlock and flood
@@ -316,14 +345,15 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 	return nil
 }
 
-// TODO
 // Returns the hash of the genesis block of the block chain
 // @param args args *int: dummy argument that is not used
 // @param reply *uint32: hash of genesis block
 // @param err error: Any errors produced
 func (l *LibMin) GetGenesisBlock(args *int, reply *string) (err error) {
-	// TODO
-	*reply = ""
+	if minerNetSettings.GenesisBlockHash == "" {
+		return GensisBlockNotFound("can not get genesis block")
+	}
+	*reply = minerNetSettings.GenesisBlockHash
 	return nil
 }
 
@@ -351,17 +381,6 @@ func (l *LibMin) GetChildren(args *string, reply *blockartlib.GetChildrenReply) 
 	}
 
 	reply.Error = nil
-	return nil
-}
-
-// TODO
-// Closes the canvas
-// @param args args *int: dummy argument that is not used
-// @param reply *uint32: hash of genesis block
-// @param err error: Any errors produced
-func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
-	// TODO
-	*reply = ""
 	return nil
 }
 
@@ -439,10 +458,8 @@ func crawlChain(headBlock *Block, fn func(*Block, interface{}, interface{}) (boo
 		block := chain[i]
 		hash := hashBlock(*block)
 		if _, exists := blockTree[hash]; exists {
-			// Block is already stored locally, so has already been validated.
-			// Since block has already been validated, all parents of block
-			// must also be valid.
-			break
+			// Block is already stored locally, so has already been validated
+			continue
 		} else {
 			// validate block, knowing that all parent blocks are valid
 			if err = validateBlock(chain[i:]); err != nil {
@@ -534,8 +551,8 @@ func validateBlock(chain []*Block) (err error) {
 // @param block Block: The block to test against.
 // @return bool: True iff block is genesis block.
 func isGenesis(block Block) bool {
-	// TODO: def'n of Genesis block?
-	return block.prev == ""
+	// TODO: def'n of Genesis block? ---> Is this the proper hash
+	return block.prev == "" && hashBlock(block) == minerNetSettings.GenesisBlockHash
 }
 
 // Returns hash of block.
@@ -560,6 +577,7 @@ func hashString(s string) []byte {
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
 func verifyBlockNonce(hash string) error {
+	n := int(minerNetSettings.PoWDifficultyOpBlock)
 	if hash[len(hash)-n:] == strings.Repeat("0", n) {
 		return nil
 	}
@@ -579,7 +597,7 @@ func verifyOps(block Block) error {
 		// Ensure op does not conflict with previous ops.
 		for j := 0; j < i; j++ {
 			if jOp := block.ops[j]; op.owner != jOp.owner {
-				if blockartlib.ShapesIntersect(op.shapeMeta.Shape, jOp.shapeMeta.Shape, canvasSettings) {
+				if blockartlib.ShapesIntersect(op.shapeMeta.Shape, jOp.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
 					return blockartlib.ShapeOverlapError(op.shapeMeta.Hash)
 				}
 			}
@@ -647,7 +665,7 @@ func verifyOp(candidateOp Op, block *Block, ch chan<- error) {
 					return
 				}
 				if candidateOp.owner != op.owner {
-					if blockartlib.ShapesIntersect(shape, op.shapeMeta.Shape, canvasSettings) {
+					if blockartlib.ShapesIntersect(shape, op.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
 						ch <- blockartlib.ShapeOverlapError(candidateOp.shapeMeta.Hash)
 						return
 					}
@@ -976,12 +994,116 @@ func inkAvail(miner ecdsa.PublicKey, headBlock *Block) (ink uint32) {
 	return reply.ink
 }
 
+/*
+	Registering the miner to the server, calling the server's RPC method
+	@return error: ServerConnectionError if connection to server fails
+*/
+func registerMinerToServer() error {
+	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
+	if err != nil {
+		return ServerConnectionError("resolve tcp error")
+	}
+	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
+	clientErr := serverConn.Call("RServer.Register", &minerSettings, minerNetSettings)
+	if clientErr != nil {
+		return ServerConnectionError("registration failure ")
+	}
+	return nil
+}
+
+/*
+	After registering with the server, the miner will ping the server every
+	specified interval / 2
+	@return error: ServerConnectionError if connection to server fails
+*/
+func startHeartBeat() error {
+	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
+		var reply bool
+		// passing the miners public key and a dummy reply
+		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
+		if clientErr != nil {
+			//TODO: what do we want to do if the rpc call fails
+			return ServerConnectionError("heartbeat failure")
+		}
+	}
+	return nil
+}
+
+/*
+	TODO: checking errors -> can we see what errors the server returns
+	Request nodes from the server, will add a neighbouring ink miner , or throw a disconnected error
+	@return: Server disconnected errors for rpc failures
+*/
+func getNodes() error {
+	var newNeighbourAddresses []net.Addr
+	clientErr := serverConn.Call("RServer.GetNodes", &publicKey, &newNeighbourAddresses)
+	if clientErr != nil {
+		return ServerConnectionError("get nodes failure")
+	}
+
+	neighboursLock.Lock()
+	for _, address := range newNeighbourAddresses {
+		// only add it if the neighbor does not already exist
+		if !doesNeighbourExist(address) {
+			client, err := rpc.Dial(address.Network(), address.String())
+			if err != nil {
+				// if we can not connect to a node, just try the next address
+				continue
+			} else {
+				inkMiner := InkMiner{}
+				inkMiner.conn = client
+				inkMiner.address = address
+				neighbours[address] = inkMiner
+			}
+		}
+	}
+
+	neighboursLock.Unlock()
+	return nil
+}
+
+/*
+	Checks if the current neighbour miner already exists in the list of neighbours
+	@param: address of the new neighbour
+	@return: true if neighbour address is found; false otherwise
+*/
+func doesNeighbourExist(addr net.Addr) bool {
+	_, exists := neighbours[addr]
+	return exists
+}
+
+/*
+	Checks to see if miner has greater than min number of connections
+	@return: Returns true if the miner has enough neighbours
+*/
+func hasEnoughNeighbours() bool {
+	return len(neighbours) >= int(minerNetSettings.MinNumMinerConnections)
+}
+
+/*
+	Routine for the ink miner to request for more nodes when
+	it has less than the min number of miners
+	Currently running this routine every second to not kill cpu
+	@returns: error when it fails to reach the server
+*/
+func requestForMoreNodesRoutine() error {
+	for range time.Tick(0.5 * time.Second) {
+		if !hasEnoughNeighbours() {
+			err := getNodes()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func main() {
 	// ink-miner should take one parameter, which is its address
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 1
+	numArgs := 3
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -996,7 +1118,38 @@ func main() {
 
 	address = args[0]
 
-	// TODO - should communicate with server to get CanvasSettings and other miners in the network
+	//TODO: verify if this parse is this correct?
+	parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
+	if err != nil {
+		// can't proceed without a proper public key
+		fmt.Printf("miner needs a valid public key")
+		return
+	}
+
+	parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
+	if err != nil {
+		// can't proceed without a proper private key
+		fmt.Printf("miner needs a valid private key")
+		return
+	}
+
+	publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	privateKey = *parsedPrivateKey
+	client, err := rpc.Dial("tcp", address)
+	if err != nil {
+		// can't proceed without a connection to the server
+		fmt.Printf("miner can not dial to the server")
+		return
+	}
+	serverConn = client
+	if registerMinerToServer() != nil {
+		// can not proceed if it is not register to the server
+		fmt.Printf("miner can not register itself to the server")
+		return
+	}
+	go startHeartBeat()
+
+	go requestForMoreNodesRoutine()
 
 	// Setup RPC
 	server := rpc.NewServer()

@@ -238,6 +238,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 
 	canvasT.minerAddr = minerAddr
 	canvasT.privKey = privKey
+	canvasT.closed = true
 
 	// connect to miner
 	if canvasT.client, err = rpc.Dial("tcp", minerAddr); err != nil {
@@ -249,11 +250,12 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	}
 
 	canvasT.settings = setting
+	canvasT.closed = false
 
 	return canvasT, setting, nil
 }
 
-//TODO - read block chain and make html file
+// Renders the canvas in HTML.
 func PaintCanvas() {
 	htmlContent := []byte("hello\ngo\n")
 	current, _ := os.Getwd()
