@@ -104,7 +104,7 @@ func buildTreeHelper(todo []PC) {
 
 func main() {
 	// TODO - make it take arguments
-	minerAddr := "127.0.0.1:8080"
+	minerAddr := ":8080"
 	//privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
 	keyPointer, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	privKey := *keyPointer

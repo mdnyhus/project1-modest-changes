@@ -265,8 +265,10 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 	if args.Priv != privateKey || args.Pub != publicKey {
 		return blockartlib.DisconnectedError("")
 	}
+
 	// TODO: Do we want canvas settings?
 	*reply = blockartlib.OpenCanvasReply{CanvasSettings: minerNetSettings.CanvasSettings}
+	
 	return nil
 }
 
@@ -1530,7 +1532,7 @@ func main() {
 	libMin := new(LibMin)
 	server.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", ":0")
+	l, e := net.Listen("tcp", ":8080")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
