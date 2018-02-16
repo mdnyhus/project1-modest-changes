@@ -849,7 +849,11 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 
 		// Ensure miner has enough ink.
 		ink, err := blockartlib.InkUsed(&shape)
-		inkAvail := inkAvail(candidateOp.owner, headBlockMeta)
+		inkAvail := inkAvail(candidateOp.owner, blockMeta)
+		if indexInBlock >= 0 {
+			// op is in the block, so don't double count the ink it uses
+			inkAvail -= ink
+		}
 		if err != nil || inkAvail < ink {
 			ch <- blockartlib.InsufficientInkError(inkAvail)
 			return
