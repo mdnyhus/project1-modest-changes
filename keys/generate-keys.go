@@ -12,7 +12,7 @@ import (
 
 func main() {
 	for i := 0; i < 20; i++ {
-		keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+		keyPointer, _ := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 		privKey := *keyPointer
 		pubByte, _ := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
 		privByte, _ := x509.MarshalECPrivateKey(&privKey)
