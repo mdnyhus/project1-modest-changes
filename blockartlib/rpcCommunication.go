@@ -11,12 +11,12 @@ import "crypto/ecdsa"
 
 type AddShapeArgs struct {
 	// ink-miner only sees internal representation of shapes, conversion is all done by blockartlib before RPC call
-	ShapeMeta       ShapeMeta
+	ShapeMeta   ShapeMeta
 	ValidateNum uint8
 }
 
 type AddShapeReply struct {
-	ShapeHash    string
+	OpHash       string
 	BlockHash    string
 	InkRemaining uint32
 
@@ -26,7 +26,7 @@ type AddShapeReply struct {
 }
 
 type GetSvgStringArgs struct {
-	ShapeHash string
+	OpHash string
 }
 
 type GetSvgStringReply struct {
@@ -39,7 +39,7 @@ type GetSvgStringReply struct {
 
 type OpenCanvasArgs struct {
 	Priv ecdsa.PrivateKey
-	Pub ecdsa.PublicKey
+	Pub  ecdsa.PublicKey
 }
 
 type OpenCanvasReply struct {
