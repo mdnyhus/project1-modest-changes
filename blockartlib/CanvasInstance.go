@@ -15,11 +15,11 @@ import (
 )
 
 type CanvasInstance struct {
-	minerAddr      string
-	privKey        ecdsa.PrivateKey
-	client         *rpc.Client
-	settings       CanvasSettings
-	closed         bool
+	minerAddr string
+	privKey   ecdsa.PrivateKey
+	client    *rpc.Client
+	settings  CanvasSettings
+	closed    bool
 }
 
 const MAX_SVG_LENGTH = 128
@@ -57,7 +57,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		return hash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
-	return hash, reply.BlockHash, reply.InkRemaining, reply.Error
+	return hash, reply.OpHash, reply.InkRemaining, reply.Error
 }
 
 // Gets SVG string from the hashed shape
@@ -68,7 +68,7 @@ func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, e
 		return svgString, DisconnectedError(canvas.minerAddr)
 	}
 
-	args := &GetSvgStringArgs{ShapeHash: shapeHash}
+	args := &GetSvgStringArgs{OpHash: shapeHash}
 	var reply GetSvgStringReply
 	if canvas.client.Call("LibMin.GetSvgString", args, &reply); err != nil {
 		return svgString, DisconnectedError(canvas.minerAddr)
@@ -628,10 +628,10 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 		end: Point{x: A.end.x - A.start.x, y: A.end.y - A.start.y}}
 	var pointB1 Point = Point{x: B.start.x - A.start.x, y: B.start.y - A.start.y}
 	var pointB2 Point = Point{x: B.end.x - A.start.x, y: B.end.y - A.start.y}
-	var edgeB Edge = Edge{start:pointB1, end:pointB2}
+	var edgeB Edge = Edge{start: pointB1, end: pointB2}
 	if pointsAreOnSameLine(edgeA.end, pointB1) || pointsAreOnSameLine(edgeA.end, pointB2) {
 		if !countTipToTipIntersect {
-		// if the endpoints are the only ones touching the edge, don't return true
+			// if the endpoints are the only ones touching the edge, don't return true
 			if !onlyIntersectsAtEndPoint(edgeA, edgeB) {
 				return true
 			}
@@ -664,21 +664,21 @@ func onlyIntersectsAtEndPoint(edgeA Edge, edgeB Edge) bool {
 	// have to check if line is more "vertical" or "horizontal"
 	var pointB1 Point = edgeB.start
 	var pointB2 Point = edgeB.end
-	slopeEdge := math.Abs((edgeA.end.y- edgeA.start.y)/(edgeA.end.x- edgeA.start.x))
-	slopeB := math.Abs((pointB2.y-pointB1.y)/(pointB2.x-pointB1.x))
+	slopeEdge := math.Abs((edgeA.end.y - edgeA.start.y) / (edgeA.end.x - edgeA.start.x))
+	slopeB := math.Abs((pointB2.y - pointB1.y) / (pointB2.x - pointB1.x))
 	parallel := floatEquals(slopeEdge, slopeB)
 	if pointB1 == edgeA.start || pointB1 == edgeA.end {
 		if parallel {
 			// pointB2 has to be going the opposite direction from edgeA.end
 			if pointB1 == edgeA.start {
-				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
-				slopeEdge = (edgeA.end.y- edgeA.start.y)/(edgeA.end.x- edgeA.start.x)
-				return slopeB == -1 * slopeEdge
+				slopeB = (pointB2.y - pointB1.y) / (pointB2.x - pointB1.x)
+				slopeEdge = (edgeA.end.y - edgeA.start.y) / (edgeA.end.x - edgeA.start.x)
+				return slopeB == -1*slopeEdge
 			} else {
 				// pointB2 has to be going the opposite direction from edgeA.start
-				slopeB = (pointB2.y-pointB1.y)/(pointB2.x-pointB1.x)
-				slopeEdge = (edgeA.start.y- edgeA.end.y)/(edgeA.start.x- edgeA.end.x)
-				return slopeB == -1 * slopeEdge
+				slopeB = (pointB2.y - pointB1.y) / (pointB2.x - pointB1.x)
+				slopeEdge = (edgeA.start.y - edgeA.end.y) / (edgeA.start.x - edgeA.end.x)
+				return slopeB == -1*slopeEdge
 			}
 		} else {
 			return true
