@@ -30,6 +30,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	//"crypto/x509"
+	//"encoding/pem"
 	"crypto/x509"
 )
 
@@ -50,7 +52,7 @@ var neighbours = make(map[net.Addr]InkMiner)
 var neighboursLock = &sync.Mutex{}
 
 // Network
-var blockTree map[string]*BlockMeta
+var blockTree = make(map[string]*BlockMeta)
 var serverConn *rpc.Client
 var outgoingAddress string
 var incomingAddress string
@@ -92,7 +94,7 @@ type Block struct {
 	nonce string
 }
 
-func (b Block) String() string {
+func (b Block) ToString() string {
 	return fmt.Sprintf("%+v", b)
 }
 
@@ -179,7 +181,6 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	*reply = true
 	headBlockLock.Lock()
 	defer headBlockLock.Unlock()
-
 	if blockMeta.block.len > headBlockMeta.block.len {
 		// head block is about to change; need to update currBlock
 		blockLock.Lock()
@@ -775,7 +776,7 @@ func isGenesis(blockMeta BlockMeta) bool {
 // @return Hash: The hash of the block.
 func hashBlock(block Block) blockartlib.Hash {
 	hasher := md5.New()
-	hasher.Write([]byte(block.String()))
+	hasher.Write([]byte(block.ToString()))
 	return blockartlib.Hash(hasher.Sum(nil)[:])
 }
 
@@ -1298,8 +1299,8 @@ func registerMinerToServer() error {
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
-	frequency := time.Duration(minerNetSettings.HeartBeat / 2) * time.Millisecond
-	for range time.Tick(frequency) {
+	frequency := time.Duration(minerNetSettings.HeartBeat/4) * time.Millisecond
+	for {
 		var reply bool
 		// passing the miners public key and a dummy reply
 		clientErr := serverConn.Call("RServer.HeartBeat", publicKey, &reply)
@@ -1308,6 +1309,8 @@ func startHeartBeat() error {
 			fmt.Println(clientErr)
 			return clientErr
 		}
+
+		time.Sleep(frequency)
 	}
 
 	return nil
@@ -1409,7 +1412,7 @@ func requestForMoreNodesRoutine() error {
 */
 func mine() {
 	// number of nonces to try before giving up lock
-	numTries := 1000
+	numTries := 100
 
 	// so that we don't check the same nonce again and again,
 	// keep a value that is always incremented. It will (eventually)
@@ -1459,6 +1462,8 @@ func mine() {
 		}
 		// give up lock
 		blockLock.Unlock()
+
+		time.Sleep(time.Second)
 
 		//TODO breaks heartbeat
 	}
@@ -1526,7 +1531,6 @@ func main() {
 	libMin := new(LibMin)
 	server.Register(libMin)
 	// need automatic port generation
-	ip := strings.Split(outgoingAddress, ":")
 	l, e := net.Listen("tcp", ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
@@ -1541,17 +1545,23 @@ func main() {
 		return
 	}
 
-	go startHeartBeat()
-
-	go requestForMoreNodesRoutine()
-
 	//Initializing the first block
 	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
 	if err != nil {
 		// Only occurs on startup. Panic to prevent miner from running in bad state.
 		panic(err)
 	}
-	currBlock = &Block{prev: blockartlib.Hash(genesisHash), len: 1}
+	hash := blockartlib.Hash(genesisHash)
+	currBlock = &Block{prev: hash, len: 1}
+
+	// create genesis block
+	genesisBlockMeta := &BlockMeta{hash: hash}
+	blockTree[hash.String()] = genesisBlockMeta
+	headBlockMeta = genesisBlockMeta
+
+	go startHeartBeat()
+
+	go requestForMoreNodesRoutine()
 
 	go mine()
 
