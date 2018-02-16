@@ -258,13 +258,32 @@ type LibMin int
 // @param args int: required by Go's RPC; does nothing
 // @param reply *blockartlib.ConvasSettings: pointer to CanvasSettings that will be returned
 // @return error: Any errors produced
-func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib.OpenCanvasReply) (err error) {
+func (l *LibMin) OpenCanvasIM(args *blockartlib.OpenCanvasArgs, reply *blockartlib.OpenCanvasReply) (err error) {
 	// Ensure art node has proper private & public keys.
-	if args.Priv != privateKey || args.Pub != publicKey {
+	// Can't compare ecdsa keys directly, so instead sign and verify
+	// choose hash arbitrarily
+	hash := []byte(incomingAddress + outgoingAddress)
+
+	// sign with miner's private key, verify with args' public key
+	r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
+	if err != nil {
 		return blockartlib.DisconnectedError("")
 	}
+	if !ecdsa.Verify(&args.Pub, hash, r, s) {
+		return blockartlib.DisconnectedError("")
+	}
+
+	// now flip it; sign with args' private key, verify with miner's public key
+	r, s, err = ecdsa.Sign(rand.Reader, &args.Priv, hash)
+	if err != nil {
+		return blockartlib.DisconnectedError("")
+	}
+	if !ecdsa.Verify(&publicKey, hash, r, s) {
+		return blockartlib.DisconnectedError("")
+	}
+
 	*reply = blockartlib.OpenCanvasReply{CanvasSettings: minerNetSettings.CanvasSettings}
-	
+
 	return nil
 }
 
@@ -272,7 +291,7 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 // @param args *blockartlib.AddShapeArgs: contains the shape to be added, and the validateNum
 // @param reply *blockartlib.AddShapeReply: pointer to AddShapeReply that will be returned
 // @return error: Any errors produced
-func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
+func (l *LibMin) AddShapeIM(args *blockartlib.AddShapeArgs, reply *blockartlib.AddShapeReply) (err error) {
 	// construct Op for shape
 	op := Op{
 		shapeMeta: &args.ShapeMeta,
@@ -327,8 +346,8 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 
 	reply.OpHash = hash.ToString()
 	// Get ink
-	getInkArgs := blockartlib.GetInkArgs{Miner: publicKey}
-	return l.GetInk(&getInkArgs, &reply.InkRemaining)
+	var inkArgs int
+	return l.GetInkIM(inkArgs, &reply.InkRemaining)
 }
 
 // Returns the full SvgString for the given hash, if it exists locally, and even if it was later deleted
@@ -337,7 +356,7 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 // @param args *blockartlib.GetSvgStringArgs: contains the hash of the shape to be returned
 // @param reply *blockartlib.GetSvgStringReply: contains the shape string, and any internal errors
 // @param err error: Any errors produced
-func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockartlib.GetSvgStringReply) (err error) {
+func (l *LibMin) GetSvgStringIM(args *blockartlib.GetSvgStringArgs, reply *blockartlib.GetSvgStringReply) (err error) {
 	// Search for shape in set of local blocks
 	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 	// do not search externally; assume that any external blocks will get
@@ -382,7 +401,7 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 // @param args args *int: dummy argument that is not used
 // @param reply *uint32: amount of remaining ink, in pixels
 // @param err error: Any errors produced
-func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error) {
+func (l *LibMin) GetInkIM(_unused int, reply *uint32) (err error) {
 	// acquire currBlock's lock
 	blockLock.Lock()
 	defer blockLock.Unlock()
@@ -397,7 +416,7 @@ func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error)
 // @param args *blockartlib.DeleteShapeArgs: contains the ValidateNum and ShapeHash
 // @param reply *blockartlib.DeleteShapeReply: contains the ink remaining, and any internal errors
 // @param err error: Any errors produced
-func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
+func (l *LibMin) DeleteShapeIM(args *blockartlib.DeleteShapeArgs, reply *blockartlib.DeleteShapeReply) (err error) {
 	// construct Op for deletion
 	op := Op{
 		deleteShapeHash: args.ShapeHash,
@@ -451,8 +470,8 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 	}
 
 	// Get ink
-	getInkArgs := blockartlib.GetInkArgs{Miner: publicKey}
-	return l.GetInk(&getInkArgs, &reply.InkRemaining)
+	var inkArgs int
+	return l.GetInkIM(inkArgs, &reply.InkRemaining)
 }
 
 // Returns the shape hashes contained by the block in BlockHash
@@ -462,7 +481,7 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 // @param args *string: the blockHash
 // @param reply *blockartlib.GetShapesReply: contains the slice of shape hashes and any internal errors
 // @param err error: Any errors produced
-func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err error) {
+func (l *LibMin) GetShapesIM(args *string, reply *blockartlib.GetShapesReply) (err error) {
 	// Search for block locally - if it does not exist, return an InvalidBlockHashError
 	blockMeta, ok := blockTree[*args]
 	if !ok || blockMeta == nil {
@@ -488,11 +507,11 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 // @param args args *int: dummy argument that is not used
 // @param reply *uint32: hash of genesis block
 // @param err error: Any errors produced
-func (l *LibMin) GetGenesisBlock(args *int, reply *blockartlib.Hash) (err error) {
+func (l *LibMin) GetGenesisBlockIM(_unused int, reply *string) (err error) {
 	if minerNetSettings.GenesisBlockHash == blockartlib.Hash([]byte{}).ToString() {
 		return GensisBlockNotFound("")
 	}
-	*reply, _ = hex.DecodeString(minerNetSettings.GenesisBlockHash)
+	*reply = minerNetSettings.GenesisBlockHash
 	return nil
 }
 
@@ -503,7 +522,7 @@ func (l *LibMin) GetGenesisBlock(args *int, reply *blockartlib.Hash) (err error)
 // @param args *[]byte: the blockHash
 // @param reply *blockartlib.GetChildrenReply: contains the slice of block hashes and any internal errors
 // @param err error: Any errors produced
-func (l *LibMin) GetChildren(args *[]byte, reply *blockartlib.GetChildrenReply) (err error) {
+func (l *LibMin) GetChildrenIM(args *[]byte, reply *blockartlib.GetChildrenReply) (err error) {
 	// First, see if block exists locally
 	if blockMeta, ok := blockTree[string(*args)]; !ok || blockMeta == nil {
 		// block does not exist locally
@@ -1561,18 +1580,26 @@ func main() {
 	}
 	serverConn = client
 
-	// Setup RPC
-	server := rpc.NewServer()
+	// Setup RPC servers
+	// first, LibMin
+	serverLibMin := rpc.NewServer()
 	libMin := new(LibMin)
-	server.Register(libMin)
+	serverLibMin.Register(libMin)
 	// need automatic port generation
 	l, e := net.Listen("tcp", ":8080")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
 	}
-	go server.Accept(l)
+	go serverLibMin.Accept(l)
 	incomingAddress = l.Addr().String()
+
+	// second, MinMin
+	serverMinMin := rpc.NewServer()
+	minMin := new(MinMin)
+	serverMinMin.Register(minMin)
+	go serverMinMin.Accept(l)
+
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
 		// cannot proceed if it is not register to the server

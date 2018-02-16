@@ -9,14 +9,14 @@ package blockartlib
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"net/rpc"
 	"os"
 	"sync"
 	"time"
-	"encoding/gob"
-	"crypto/elliptic"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -257,7 +257,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	gob.Register(&elliptic.CurveParams{})
 	openCanvasArgs := &OpenCanvasArgs{Priv: privKey, Pub: privKey.PublicKey}
 	var openCanvasReply OpenCanvasReply
-	if err = canvasT.client.Call("LibMin.OpenCanvas", openCanvasArgs, &openCanvasReply); err != nil {
+	if err = canvasT.client.Call("LibMin.OpenCanvasIM", openCanvasArgs, &openCanvasReply); err != nil {
 		setting = openCanvasReply.CanvasSettings
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}

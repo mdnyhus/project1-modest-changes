@@ -133,6 +133,7 @@ func main() {
 	}
 
 	buildTree()
+
 	// find longest chain
 	maxHeight := -1
 	var head *bTNode
