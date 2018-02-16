@@ -15,7 +15,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 )
 
@@ -33,6 +36,12 @@ type bTNode struct {
 type PC struct {
 	parent string
 	cur    string
+}
+
+type ApiJson struct {
+	CanvasXMax uint32
+	CanvasYMax uint32
+	SvgStrings []string
 }
 
 var bTLeaves []*bTNode
@@ -90,8 +99,10 @@ func buildTreeHelper(todo []PC) {
 
 	bT[pc.cur] = node
 	if len(blockHashes) == 0 {
-		// this is a leaf node
-		bTLeaves = append(bTLeaves, node)
+		if !inList(node, bTLeaves) {
+			// this is a new leaf node
+			bTLeaves = append(bTLeaves, node)
+		}
 	} else {
 		// add all the children nodes to the todo
 		for _, blockHash := range blockHashes {
@@ -102,27 +113,24 @@ func buildTreeHelper(todo []PC) {
 	buildTreeHelper(todo)
 }
 
-func main() {
-	// TODO - make it take arguments
-	minerAddr := "127.0.0.1:8080"
-	//privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	privKey := *keyPointer
-
-	// Open a canvas.
-	var err error
-	canvas, settings, err = blockartlib.OpenCanvas(minerAddr, privKey)
-	if checkError(err) != nil {
-		return
+func inList(node *bTNode, list []*bTNode) bool {
+	for _, n := range list {
+		if node.hash == n.hash {
+			return true
+		}
 	}
+	return false
+}
 
-	// build up blockchain
-	genesisBlockHash, err = canvas.GetGenesisBlock()
-	if checkError(err) != nil {
-		return
+func updateTree() {
+	var todo []PC
+	for _, node := range bTLeaves {
+		todo = append(todo, PC{parent: node.parent, cur: node.hash})
 	}
+	buildTreeHelper(todo)
+}
 
-	buildTree()
+func getShapes() []string {
 	// find longest chain
 	maxHeight := -1
 	var head *bTNode
@@ -152,29 +160,63 @@ func main() {
 	for _, node := range chain {
 		shapeHashes, err := canvas.GetShapes(node.hash)
 		if checkError(err) != nil {
-			return
+			continue
 		}
 
 		for _, shapeHash := range shapeHashes {
 			svgString, err := canvas.GetSvgString(shapeHash)
 			if checkError(err) != nil {
-				return
+				continue
 			}
 
 			svgStrings = append(svgStrings, svgString)
 		}
 	}
 
-	// write html file
-	file, _ := os.OpenFile("./html-app.html", os.O_RDWR|os.O_CREATE, 0666)
-	file.Write([]byte("<svg>\n"))
+	return svgStrings
+}
 
-	for i := 0; i < len(svgStrings); i++ {
-		fmt.Println(svgStrings[i])
-		file.Write([]byte(svgStrings[i] + "\n"))
+func pollTree() {
+	// build up blockchain
+	var err error
+	genesisBlockHash, err = canvas.GetGenesisBlock()
+	if checkError(err) != nil {
+		return
 	}
 
-	file.Write([]byte("<svg/>"))
-	file.Sync()
-	file.Close()
+	buildTree()
+
+	for {
+		// constantly try to update tree
+		updateTree()
+	}
+}
+
+func main() {
+	// TODO - make it take arguments
+	minerAddr := "127.0.0.1:8080"
+	keyPointer, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	privKey := *keyPointer
+
+	// Open a canvas.
+	var err error
+	canvas, settings, err = blockartlib.OpenCanvas(minerAddr, privKey)
+	if checkError(err) != nil {
+		return
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		svgStrings := getShapes()
+		fmt.Println(svgStrings)
+
+		p := ApiJson{
+			CanvasXMax: settings.CanvasXMax,
+			CanvasYMax: settings.CanvasYMax,
+			SvgStrings: svgStrings}
+		json.NewEncoder(w).Encode(p)
+	})
+
+	go pollTree()
+
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
