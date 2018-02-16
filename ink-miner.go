@@ -30,6 +30,8 @@ import (
 	"sync"
 	"time"
 	"encoding/hex"
+	"crypto/x509"
+	"encoding/pem"
 )
 
 // Static
@@ -1388,7 +1390,7 @@ func main() {
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 1
+	numArgs := 3
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1406,27 +1408,30 @@ func main() {
 	// TODO: Uncomment the below:
 
 	//TODO: verify if this parse is this correct?
-	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
-	//if err != nil {
-	//	// can't proceed without a proper public key
-	//	fmt.Printf("miner needs a valid public key")
-	//	return
-	//}
-	//
-	//parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
-	//if err != nil {
-	//	// can't proceed without a proper private key
-	//	fmt.Printf("miner needs a valid private key")
-	//	return
-	//}
-	//
-	//publicKey = parsedPublicKey.(ecdsa.PublicKey)
-	//privateKey = *parsedPrivateKey
+	pub, _ := pem.Decode([]byte(args[1]))
+	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub.Bytes)
+	if err != nil {
+		fmt.Println(err)
+		// can't proceed without a proper public key
+		fmt.Printf("miner needs a valid public key")
+		return
+	}
+	priv, _ := pem.Decode([]byte(args[2]))
+	parsedPrivateKey, err := x509.ParsePKCS1PrivateKey(priv.Bytes)
+	if err != nil {
+		// can't proceed without a proper private key
+		fmt.Println(err)
+		fmt.Printf("miner needs a valid private key")
+		return
+	}
 
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	privKey := *keyPointer
-	publicKey = privKey.PublicKey
-	privateKey = privKey
+	publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	privateKey = *parsedPrivateKey
+
+	//keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	//privKey := *keyPointer
+	//publicKey = privKey.PublicKey
+	//privateKey = privKey
 
 	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
