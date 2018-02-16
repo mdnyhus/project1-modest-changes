@@ -748,7 +748,7 @@ func validateBlock(chain []*BlockMeta) (err error) {
 		return blockartlib.InvalidBlockHashError(string(blockMeta.hash))
 	}
 	// Verify POW.
-	if err = verifyBlockNonce(blockMeta.block.nonce); err != nil {
+	if err = verifyBlockNonce(blockMeta.block.nonce, len(blockMeta.block.ops) == 0); err != nil {
 		return err
 	}
 	// Verify ops.
@@ -801,9 +801,12 @@ func hashString(s string) []byte {
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
-func verifyBlockNonce(hash string) error {
-	// TODO - if PoWDifficultyNoOpBlock is different, need to check if there are any ops
-	n := int(minerNetSettings.PoWDifficultyOpBlock)
+func verifyBlockNonce(hash string, noop bool) error {
+	pow := minerNetSettings.PoWDifficultyOpBlock
+	if noop {
+		pow = minerNetSettings.PoWDifficultyNoOpBlock
+	}
+	n := int(pow)
 	if hash[len(hash)-n:] == strings.Repeat("0", n) {
 		return nil
 	}
@@ -855,8 +858,8 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 		return
 	}
 
-	// Verify op with shape.
 	if candidateOp.shapeMeta != nil {
+		// Verify op with shape.
 		shape := candidateOp.shapeMeta.Shape
 		// Ensure svg string isn't beyond the maximum specified length.
 		if svg := shape.Svg; blockartlib.IsSvgTooLong(svg) {
@@ -919,13 +922,52 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 				return
 			}
 		}
-		// Verify deletion op.
 	} else {
-		if err := shapeExists(candidateOp.deleteShapeHash, candidateOp.owner, blockMeta); err != nil {
-			ch <- err
-			return
+		// op is a delete; verify shape existed on the canvas, and belonged to this miner
+		curr := blockMeta
+		for {
+			for i, opMeta := range curr.block.ops {
+				// only want to search through ops that appear *before* this op, so if i == -1, that's all ops
+				// and if i >= 0, that's all ops with a *smaller* index
+				// test if curr == blockMeta, and that the
+				// aren't guaranteed blockMeta is a valid meta, just use block
+				if curr.block.prev.String() == blockMeta.block.prev.String() && indexInBlock >= 0 && i >= indexInBlock {
+					// this op is after candidateOpMeta
+					continue
+				}
+
+				if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == opMeta.op.deleteShapeHash {
+					// found the op for adding the shape
+					if opMeta.op.owner == candidateOp.owner {
+						// correct owner
+						ch <- nil
+						return
+					}
+
+					// incorrect owner
+					ch <- blockartlib.ShapeOwnerError(candidateOp.deleteShapeHash)
+					return
+				}
+			}
+
+			// Exit loop once we verify no overlap conflicts in the genesis block.
+			if isGenesis(*curr) {
+				break
+			}
+
+			var ok bool
+			curr, ok = blockTree[curr.block.prev.String()]
+			if !ok {
+				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.String())
+				return
+			}
 		}
+
+		// could not find shape
+		ch <- blockartlib.ShapeOwnerError(candidateOp.deleteShapeHash)
+		return
 	}
+
 	ch <- nil
 	return
 }
@@ -989,16 +1031,6 @@ func floodBlock(blockMeta BlockMeta) {
 			// TODO Do we care? Noop for now.
 			replies++
 		}
-	}
-}
-
-// TODO: Validate stub.
-// Continually searches for nonce for the global currBlock.
-// Runs on seperate thread. All interactions should take place
-// over a chan, or through a Mutex.
-func solveNonce() {
-	for {
-		// TODO
 	}
 }
 
@@ -1099,39 +1131,6 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 	//       Invoke function `isSimpleShape`
 
 	return blockartlib.OutOfBoundsError{}
-}
-
-// TODO
-// - checks if the passed shape intersects with any shape currently on the canvas
-//   that is NOT owned by this miner, starting at headBlock
-// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param shape *blockartlib.Shape: pointer to shape that will be checked for
-//                                  intersections
-// @param headBlock *Block: head block of chain from which ink will be calculated
-// @return shapeOverlapHash string: empty if shape does intersect with any other
-//                                  non-owned shape; otherwise it is the hash of
-//                                  the shape this shape overlaps
-func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash string) {
-	// TODO
-	return ""
-}
-
-// TODO
-// Checks if a shape with the given hash exists on the canvas (and was not later
-// deleted) starting at headBlock, and that the passed owner is the owner of this shape
-// Returned error is nil if shape does exist and is owned by owner, otherwise returns
-// a non-nil error
-// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param deleteShapeHash string: hash of shape to check
-// @param owner ecdsa.PublicKey: public key identfying miner
-// @param headBlock *Block: head block of chain from which ink will be calculated
-// @return err error: Error indicating if shape is valid. Can be nil or one
-//                    of the following errors:
-// 						- ShapeOwnerError
-//						- TODO - error if shape does not exist?
-func shapeExists(deleteShapeHash string, owner ecdsa.PublicKey, headBlock *BlockMeta) (err error) {
-	// TODO
-	return blockartlib.ShapeOwnerError(deleteShapeHash)
 }
 
 ///////////////////////////////////////////////////////////
@@ -1428,7 +1427,7 @@ func mine() {
 			currBlock.nonce = strconv.Itoa(nonceTry)
 			nonceTry++
 			currNonceHash := hashBlock(*currBlock)
-			if err := verifyBlockNonce(currNonceHash.String()); err == nil {
+			if err := verifyBlockNonce(currNonceHash.String(), len(currBlock.ops) == 0); err == nil {
 				// currBlock is now a valid block
 				// so create BlockMeta to wrap around currBlock
 				hash := hashBlock(*currBlock)
