@@ -347,7 +347,7 @@ func HashShape(shape Shape) string {
 	Parses svg string to actual shape struct
 		splits the path by space and increment
 		currPoint = the current position where the pen is when drawing the svg
-		start point = the point where the pen is moved to, for z cases
+		Start point = the point where the pen is moved to, for z cases
 		@param: path string: path of the svg string
 	@return: shape that is filled with edges
 */
@@ -428,11 +428,11 @@ func getOffsetFromKeyword(keyWord string) int {
 }
 
 /*
-	Handles the M/m case, moves the current location of the pen, as well as creates a new start point
+	Handles the M/m case, moves the current location of the pen, as well as creates a new Start point
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: start: the origin point (where the pen should go back to with z)
-	@param: xVal: the x value for the svg
-	@param: yVal: the y value for the svg
+	@param: Start: the origin point (where the pen should go back to with z)
+	@param: xVal: the X value for the svg
+	@param: yVal: the Y value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -454,7 +454,7 @@ func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal strin
 		currentPoint.X += valX
 		currentPoint.Y += valY
 	}
-	// new start origin for z close
+	// new Start origin for z close
 	*startPoint = *currentPoint
 	return nil
 }
@@ -463,8 +463,8 @@ func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal strin
 	Handles the L/l case, adds a line to the edge
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: xVal: the x value for the svg
-	@param: yVal: the y value for the svg
+	@param: xVal: the X value for the svg
+	@param: yVal: the Y value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -496,7 +496,7 @@ func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, ca
 	Handles the V/v case, adds a vertical line
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: yVal: the y value for the svg
+	@param: yVal: the Y value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -523,7 +523,7 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) e
 	Handles the H/h case, adds a horizontal line
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: xVal: the x value for the svg
+	@param: xVal: the X value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -549,7 +549,7 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) e
 	Handles the Z/z case, closes off the shape from the origin point (not case sensitive)
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: start: the origin point (where the pen should go back to with z)
+	@param: Start: the origin point (where the pen should go back to with z)
 	@param: currentIndeX: pointer to increment the val to next keyword
 */
 
@@ -622,7 +622,7 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 	if err != nil {
 		return 0, errors.New("Couldn't find area of an open shape")
 	}
-	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
+	// keep looping until the "current" edge is the same as the Start edge, you've found a cycle
 	for start != *current {
 		area += getCrossProduct(current.Start, current.End)
 		current, err = findNextEdge(shape, *current)
@@ -688,7 +688,7 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 	}
 
 	// 2: Check if edge A intersects with edge segment B
-	// 2a: Check if the start or end point of B is on line A - this is for parallel lines
+	// 2a: Check if the Start or End point of B is on line A - this is for parallel lines
 	// If cross product between two points is 0, it means the two points are on the same line through origin
 	// meaning it is necessary to translate the edge to the origin, and the points of B accordingly
 	var edgeA Edge = Edge{Start: Point{X: 0, Y: 0},
@@ -706,7 +706,7 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 			return true
 		}
 	}
-	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
+	// 2b: Check if the cross product of the Start and End points of B with line A are of different signs
 	// if they are, the lines intersect
 	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
 	pointB1 = B.Start
