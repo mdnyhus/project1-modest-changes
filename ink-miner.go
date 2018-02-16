@@ -1296,13 +1296,13 @@ func getNodes() error {
 			}
 		}
 	}
-
 	neighboursLock.Unlock()
 	return nil
 }
 
 /*
 	Tries to add neighbour to local slice of neighbours
+	NOTE: requires neighboursLock to be acquired before calling this function
 	@param: outgoing address of the new neighbour
 	@return: InkMiner of added neighbour, nil if neighbour was not added
 */
@@ -1315,9 +1315,7 @@ func addNeighbour(address net.Addr) *InkMiner {
 			return nil
 		}
 
-		inkMiner := InkMiner{}
-		inkMiner.conn = client
-		inkMiner.address = address
+		inkMiner := InkMiner{conn: client, address: address}
 		neighbours[address] = inkMiner
 
 		return &inkMiner
@@ -1481,7 +1479,7 @@ func main() {
 	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {
 		// can't proceed without a connection to the server
-		fmt.Printf("miner can not dial to the server")
+		fmt.Printf("miner cannot dial to the server")
 		return
 	}
 	serverConn = client
@@ -1501,8 +1499,8 @@ func main() {
 	incomingAddress = l.Addr().String()
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
-		// can not proceed if it is not register to the server
-		fmt.Printf("miner can not register itself to the server")
+		// cannot proceed if it is not register to the server
+		fmt.Printf("miner cannot register itself to the server")
 		return
 	}
 
