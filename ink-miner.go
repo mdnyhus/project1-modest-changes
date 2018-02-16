@@ -1592,9 +1592,5 @@ func main() {
 
 	go requestForMoreNodesRoutine()
 
-	go mine()
-
-	for {
-
-	}
+	mine()
 }
