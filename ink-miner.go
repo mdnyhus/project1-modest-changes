@@ -146,15 +146,13 @@ func (e MinerSettingNotFound) Error() string {
 // op if it is valid.
 // @param op *Op: Op which will be verified, and potentially added and flooeded
 // @param reply *bool: Bool indicating whether op was successfully validated
-// @return error: TODO
+// @return err error: Any errors in receiving op.
 func (m *MinMin) NotifyNewOp(opMeta *OpMeta, reply *bool) (err error) {
-	// TODO - check if op has already been seen, and only flood if it is new
-	// if op is validated, receiveNewOp will put op in currBlock and flood the op
-	*reply = false
-	if e := receiveNewOp(*opMeta); e == nil {
+	*reply = true
+	if e := receiveNewOp(*opMeta); e != nil {
 		// validate was successful only if error is null
-		// TODO - is the error  useful?
-		*reply = true
+		*reply = false
+		return e
 	}
 	return nil
 }
@@ -265,7 +263,6 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 	if args.Priv != privateKey || args.Pub != publicKey {
 		return blockartlib.DisconnectedError("")
 	}
-	// TODO: Do we want canvas settings?
 	*reply = blockartlib.OpenCanvasReply{CanvasSettings: minerNetSettings.CanvasSettings}
 	return nil
 }
@@ -359,7 +356,6 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 // @param err error: Any errors produced
 func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error) {
 	// acquire currBlock's lock
-	// TODO - is this needed? it's read-only (is it?)
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
@@ -472,7 +468,6 @@ func (l *LibMin) GetGenesisBlock(args *int, reply *blockartlib.Hash) (err error)
 	return nil
 }
 
-// TODO
 // Returns the shape hashes contained by the block in BlockHash
 // NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 // do not search externally; assume that any external blocks will get
@@ -764,12 +759,8 @@ func validateBlock(chain []*BlockMeta) (err error) {
 // @return bool: True iff block is genesis block.
 func isGenesis(blockMeta BlockMeta) bool {
 	block := blockMeta.block
-	// TODO: What is gensis def'n? Who signs it?
-	// TODO: def'n of Genesis block? ---> Is this the proper hash
-	return string(block.prev) == "" && hashBlock(block).String() == minerNetSettings.GenesisBlockHash
+	return block.prev.ToString() == "" && hashBlock(block).String() == minerNetSettings.GenesisBlockHash
 }
-
-// TODO: Might not be worth doing, but do we need seperate hash functions?
 
 // Returns hash of block.
 // @param block Block: Block to be hashed.
@@ -903,7 +894,6 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 
 				// This op has been performed before.
 				if candidateOpMeta.hash.String() == opMeta.hash.String() {
-					// TODO: More specific error?
 					ch <- blockartlib.OutOfBoundsError{}
 					return
 				}
@@ -928,6 +918,7 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 			}
 		}
 	} else {
+		// TODO: Return error if already encountered @Matthew
 		// op is a delete; verify shape existed on the canvas, and belonged to this miner
 		curr := blockMeta
 		for {
@@ -977,8 +968,6 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 	return
 }
 
-// TODO this and floodBlock currentl share almost all the code. If worth it, call helper
-//      function that takes the function and paramters.
 // Sends op to all neighbours.
 // LOCKS: Calls neighboursLock.Lock().
 // @param opMeta OpMeta: Op to be broadcast.
@@ -995,15 +984,11 @@ func floodOp(opMeta OpMeta) {
 		_ = n.conn.Go("NotifyNewOp", opMeta, &reply, replyChan)
 	}
 
-	// TODO: Handle errors, chain disagreements. Discuss with team.
-	// Current implementation simply sends out blocks and doesn't
-	// care about the response.
 	for replies != len(neighbours) {
 		select {
 		case <-replyChan:
 			replies++
 		case <-time.After(2 * time.Second):
-			// TODO Do we care? Noop for now.
 			replies++
 		}
 	}
@@ -1025,15 +1010,11 @@ func floodBlock(blockMeta BlockMeta) {
 		_ = n.conn.Go("NotifyNewBlock", blockMeta, &reply, replyChan)
 	}
 
-	// TODO: Handle errors, chain disagreements. Discuss with team.
-	// Current implementation simply sends out blocks and doesn't
-	// care about the response.
 	for replies != len(neighbours) {
 		select {
 		case <-replyChan:
 			replies++
 		case <-time.After(2 * time.Second):
-			// TODO Do we care? Noop for now.
 			replies++
 		}
 	}
@@ -1514,7 +1495,6 @@ func main() {
 	publicKey = *parsedPublicKey.(*ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
 
-	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 	gob.Register(elliptic.P224())
