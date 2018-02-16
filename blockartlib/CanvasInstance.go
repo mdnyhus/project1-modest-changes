@@ -43,7 +43,6 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 
 	shape, err := convertShape(shapeType, shapeSvgString, fill, stroke)
 	if err != nil {
-		// TODO - deal with any errors convertShape may produce
 		return shapeHash, blockHash, inkRemaining, err
 	}
 

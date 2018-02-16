@@ -194,7 +194,6 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 			for _, oldOp := range oldOps {
 				// go through ops sequentially for simplicity
 				// TODO - if runtime is really bad, could make it parallel
-				// FIXME
 				pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
 				go verifyOp(oldOp, &pseudoCurrBlockMeta, -1, verificationChan)
 				err := <-verificationChan
@@ -270,7 +269,6 @@ func (l *LibMin) OpenCanvasIM(args *blockartlib.OpenCanvasArgs, reply *blockartl
 	// Can't compare ecdsa keys directly, so instead sign and verify
 	// choose hash arbitrarily
 
-	// TODO: @Kamil - add function to compare keys and remove code below
 	hash := []byte(incomingAddress + outgoingAddress)
 
 	// sign with miner's private key, verify with args' public key
@@ -858,6 +856,8 @@ func hashString(s string) []byte {
 	return hasher.Sum(nil)[:]
 }
 
+func keysEqual(
+
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
@@ -1417,7 +1417,6 @@ func startHeartBeat() error {
 }
 
 /*
-	TODO: checking errors -> can we see what errors the server returns
 	Request nodes from the server, will add a neighbouring ink miner , or throw a disconnected error
 	@return: Server disconnected errors for rpc failures
 */
@@ -1425,7 +1424,7 @@ func getNodes() error {
 	var newNeighbourAddresses []net.Addr
 	clientErr := serverConn.Call("RServer.GetNodes", &publicKey, &newNeighbourAddresses)
 	if clientErr != nil {
-		return ServerConnectionError("get nodes failure")
+		return ServerConnectionError("")
 	}
 
 	neighboursLock.Lock()
@@ -1570,8 +1569,6 @@ func mine() {
 		blockLock.Unlock()
 
 		time.Sleep(time.Second)
-
-		//TODO breaks heartbeat
 	}
 }
 
