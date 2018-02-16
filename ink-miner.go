@@ -1574,13 +1574,14 @@ func main() {
 	libMin := new(LibMin)
 	server.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", ":0")
+	l, e := net.Listen("tcp", getOutboundIP() + ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
 	}
 	go server.Accept(l)
 	incomingAddress = l.Addr().String()
+	fmt.Println("Listening on " + incomingAddress)
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
 		// cannot proceed if it is not register to the server
@@ -1607,4 +1608,16 @@ func main() {
 	go requestForMoreNodesRoutine()
 
 	mine()
+}
+
+// Copied from https://stackoverflow.com/a/42017521/5759077
+func getOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+	return localAddr[0:idx]
 }
