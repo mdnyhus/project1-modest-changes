@@ -238,8 +238,6 @@ var once sync.Once
 // Can return the following errors:
 // - DisconnectedError
 func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, setting CanvasSettings, err error) {
-	// TODO
-	// For now return DisconnectedError
 	once.Do(func() {
 		canvasT = &CanvasInstance{}
 	})
