@@ -1325,6 +1325,7 @@ func inkAvailCurr() (ink uint32) {
 */
 func registerMinerToServer() error {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", incomingAddress)
+	fmt.Println(tcpAddr.String())
 	if err != nil {
 		return ServerConnectionError("resolve tcp error")
 	}
