@@ -188,11 +188,7 @@ type MinerInfo struct {
 func monitor(k string, heartBeatInterval time.Duration) {
 	for {
 		allMiners.Lock()
-		fmt.Println("miner")
-		fmt.Println(allMiners.all[k])
-		fmt.Println(allMiners.all[k].RecentHeartbeat)
 		if time.Now().UnixNano()-allMiners.all[k].RecentHeartbeat > int64(heartBeatInterval) {
-			//fmt.Println(time.Now().UnixNano()-allMiners.all[k].RecentHeartbeat > int64(heartBeatInterval))
 			outLog.Printf("%s timed out\n", allMiners.all[k].Address.String())
 			delete(allMiners.all, k)
 			allMiners.Unlock()
@@ -304,7 +300,6 @@ func (s *RServer) GetNodes(key ecdsa.PublicKey, addrSet *[]net.Addr) error {
 // Returns:
 // - UnknownKeyError if the server does not know a miner with this publicKey.
 func (s *RServer) HeartBeat(key ecdsa.PublicKey, _ignored *bool) error {
-	fmt.Println("GOT hearbeart=====> ")
 	allMiners.Lock()
 	defer allMiners.Unlock()
 

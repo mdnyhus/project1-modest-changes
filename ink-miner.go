@@ -1460,7 +1460,8 @@ func mine() {
 		}
 		// give up lock
 		blockLock.Unlock()
-		time.Sleep(time.Duration(minerNetSettings.HeartBeat /2) * time.Millisecond)
+
+		//TODO breaks heartbeat
 	}
 }
 
