@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/hex"
 )
 
 // Static
@@ -361,10 +362,10 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 // @param reply *uint32: hash of genesis block
 // @param err error: Any errors produced
 func (l *LibMin) GetGenesisBlock(args *int, reply *blockartlib.Hash) (err error) {
-	if minerNetSettings.GenesisBlockHash.String() == blockartlib.Hash([]byte{}).String() {
+	if minerNetSettings.GenesisBlockHash == blockartlib.Hash([]byte{}).String() {
 		return GensisBlockNotFound("")
 	}
-	*reply = minerNetSettings.GenesisBlockHash
+	*reply, _ = hex.DecodeString(minerNetSettings.GenesisBlockHash)
 	return nil
 }
 
@@ -570,7 +571,7 @@ func isGenesis(blockMeta BlockMeta) bool {
 	block := blockMeta.block
 	// TODO: What is gensis def'n? Who signs it?
 	// TODO: def'n of Genesis block? ---> Is this the proper hash
-	return string(block.prev) == "" && hashBlock(block).String() == minerNetSettings.GenesisBlockHash.String()
+	return string(block.prev) == "" && hashBlock(block).String() == minerNetSettings.GenesisBlockHash
 }
 
 // TODO: Might not be worth doing, but do we need seperate hash functions?
