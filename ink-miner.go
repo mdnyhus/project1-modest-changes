@@ -1612,7 +1612,7 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", ":8080")
+	l, e := net.Listen("tcp", ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return

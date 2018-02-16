@@ -224,6 +224,8 @@ func main() {
 			}
 
 			fmt.Printf("inkRemaining: %d\n", inkRemaining)
+		case "Exit":
+			os.Exit(0)
 		default:
 			fmt.Println("Unrecognized command")
 		}
