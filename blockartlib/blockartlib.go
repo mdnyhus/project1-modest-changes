@@ -252,9 +252,13 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
 
-	if err = canvasT.client.Call("LibMin.GetCanvasSettings", 0, &setting); err != nil {
+	openCanvasArgs := &OpenCanvasArgs{Priv: privKey, Pub: privKey.PublicKey}
+	var openCanvasReply OpenCanvasReply
+	if err = canvasT.client.Call("LibMin.OpenCanvas", openCanvasArgs, &openCanvasReply); err != nil {
+		setting = openCanvasReply.CanvasSettings
 		return canvasT, setting, DisconnectedError(minerAddr)
 	}
+	setting = openCanvasReply.CanvasSettings
 
 	canvasT.settings = setting
 	canvasT.closed = false
