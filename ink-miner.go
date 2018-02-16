@@ -269,6 +269,8 @@ func (l *LibMin) OpenCanvasIM(args *blockartlib.OpenCanvasArgs, reply *blockartl
 	// Ensure art node has proper private & public keys.
 	// Can't compare ecdsa keys directly, so instead sign and verify
 	// choose hash arbitrarily
+
+	// TODO: @Kamil - add function to compare keys and remove code below
 	hash := []byte(incomingAddress + outgoingAddress)
 
 	// sign with miner's private key, verify with args' public key
@@ -1647,13 +1649,14 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", ":8080")
+	l, e := net.Listen("tcp", getOutboundIP() + ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
 	}
 	go serverLibMin.Accept(l)
 	incomingAddress = l.Addr().String()
+	fmt.Printf("Listening for blockartlib calls on address: %s\n", incomingAddress)
 
 	// second, MinMin
 	serverMinMin := rpc.NewServer()
@@ -1688,4 +1691,16 @@ func main() {
 	go requestForMoreNodesRoutine()
 
 	mine()
+}
+
+// Copied from https://stackoverflow.com/a/42017521/5759077
+func getOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+	return localAddr[0:idx]
 }
