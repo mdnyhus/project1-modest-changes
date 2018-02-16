@@ -268,6 +268,8 @@ func (l *LibMin) OpenCanvasIM(args *blockartlib.OpenCanvasArgs, reply *blockartl
 	// Ensure art node has proper private & public keys.
 	// Can't compare ecdsa keys directly, so instead sign and verify
 	// choose hash arbitrarily
+
+	// TODO: @Kamil - add function to compare keys and remove code below
 	hash := []byte(incomingAddress + outgoingAddress)
 
 	// sign with miner's private key, verify with args' public key
