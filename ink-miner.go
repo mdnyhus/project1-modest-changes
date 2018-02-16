@@ -31,7 +31,6 @@ import (
 	"sync"
 	"time"
 	"crypto/x509"
-	"encoding/pem"
 )
 
 // Static
@@ -1482,33 +1481,21 @@ func main() {
 
 	outgoingAddress = args[0]
 
-	// TODO: Uncomment the below:
-
-	//TODO: verify if this parse is this correct?
-	pub, _ := pem.Decode([]byte(args[1]))
-	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub.Bytes)
+	pub, err := hex.DecodeString(args[1])
+	if err != nil {
+		fmt.Println(args[1])
+		panic(err)
+	}
+	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub)
 	if err != nil {
 		fmt.Println(err)
-		// can't proceed without a proper public key
 		fmt.Printf("miner needs a valid public key")
 		return
 	}
-	priv, _ := pem.Decode([]byte(args[2]))
-	parsedPrivateKey, err := x509.ParsePKCS1PrivateKey(priv.Bytes)
-	if err != nil {
-		// can't proceed without a proper private key
-		fmt.Println(err)
-		fmt.Printf("miner needs a valid private key")
-		return
-	}
-
-	publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	priv, _ := hex.DecodeString(args[2])
+	parsedPrivateKey, err := x509.ParseECPrivateKey(priv)
+	publicKey = *parsedPublicKey.(*ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
-
-	//keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	//privKey := *keyPointer
-	//publicKey = privKey.PublicKey
-	//privateKey = privKey
 
 	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
