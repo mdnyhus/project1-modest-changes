@@ -1241,21 +1241,16 @@ func registerMinerToServer() error {
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
-	//prevCheck := time.Now()
 	frequency := time.Duration(minerNetSettings.HeartBeat / 2) * time.Millisecond
-	fmt.Println(frequency)
-	last := 0
-	for {
-		fmt.Println("hearbeat")
+	for range time.Tick(frequency) {
 		var reply bool
 		// passing the miners public key and a dummy reply
-		go serverConn.Call("RServer.HeartBeat", publicKey, &reply)
-
-		fmt.Println("Succuessful heartbeat message")
-		//prevCheck = time.Now()
-		//time.Sleep(frequency)
-		last++
-		fmt.Print(last)
+		clientErr := serverConn.Call("RServer.HeartBeat", publicKey, &reply)
+		if clientErr != nil {
+			// TODO ->
+			fmt.Println(clientErr)
+			return clientErr
+		}
 	}
 
 	return nil
@@ -1386,9 +1381,9 @@ func mine() {
 				break
 			}
 		}
-
 		// give up lock
 		blockLock.Unlock()
+		time.Sleep(time.Duration(minerNetSettings.HeartBeat /2) * time.Millisecond)
 	}
 }
 
