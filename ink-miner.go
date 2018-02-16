@@ -883,9 +883,9 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 		inkAvail := inkAvail(candidateOp.owner, blockMeta)
 		if indexInBlock >= 0 {
 			// op is in the block, so don't double count the ink it uses
-			inkAvail -= ink
+			inkAvail -= shape.Ink
 		}
-		if err != nil || inkAvail < shape.Ink {
+		if inkAvail < shape.Ink {
 			ch <- blockartlib.InsufficientInkError(inkAvail)
 			return
 		}
