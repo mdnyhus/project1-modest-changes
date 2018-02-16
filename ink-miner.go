@@ -1225,6 +1225,15 @@ func inkAvailCrawlHelper(blockMeta *BlockMeta, args interface{}, reply interface
 		}
 	}
 
+	if ecdsa.Verify(&crawlArgs.miner, blockMeta.hash, &blockMeta.r, &blockMeta.s) {
+		// this block was created by the miner; add the ink you get for mining
+		if len(blockMeta.block.ops) == 0 {
+			crawlReply.ink += minerNetSettings.InkPerNoOpBlock
+		} else {
+			crawlReply.ink += minerNetSettings.InkPerOpBlock
+		}
+	}
+
 	// TODO - add ink if crawlArgs.miner mined this block
 
 	// Continue searching down the chain
