@@ -595,7 +595,7 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		} else {
 			return 0, err
 		}
-		if !IsSimpleShape(shape) {
+		if !shape.IsCircle && !IsSimpleShape(shape) {
 			return 0, errors.New("Can't have non-transparent ink if shape has self-intersecting edges")
 		}
 	}
