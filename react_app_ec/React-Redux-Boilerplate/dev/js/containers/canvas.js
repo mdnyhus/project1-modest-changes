@@ -1,6 +1,6 @@
 import React, {Component} from 'react';
 import {connect} from 'react-redux';
-import {renderCanvas} from '../actions/index'
+import {renderCanvas, changeVersion} from '../actions/index'
 import {bindActionCreators} from 'redux';
 /*
  * We need "if(!this.props.user)" because we set state to null by default
@@ -13,19 +13,18 @@ class Canvas extends Component {
     }
 
     render() {
-        var width = this.props.canvas.width;
-        var height = this.props.canvas.height;
+        var canvas = this.props.canvas
+        var width = canvas.width;
+        var height = canvas.height;
         var htmlShapes
         var historyList
         if (this.props.canvas.shapeHistory.length !== 0){
-            var shapeHistory = this.props.canvas.shapeHistory;
+            var shapeHistory = canvas.shapeHistory;
             var currentVersion = shapeHistory.length - 1;
-            var shapes = shapeHistory[currentVersion]
-            htmlShapes = appendSvgPaths(shapeHistory[currentVersion])
+            htmlShapes = appendSvgPaths(canvas.currentVersionCanvas)
             historyList = shapeHistory.map((version, index)=> 
-
                 <li key={index}>
-                    <a onClick={()=>{console.log("sup")}}>Version: {index + 1}</a>
+                    <a onClick={()=>{this.props.changeVersion({})}}>Version: {index + 1}</a>
                 </li>    
             );
         }
@@ -35,7 +34,7 @@ class Canvas extends Component {
                     <div className="col-md-6">
                         <h1>Canvas</h1>
                         <div id="canvas" style={{width: width, height: height}} className="canvas">
-                            <div dangerouslySetInnerHTML={{__html: htmlShapes}} />
+                            <div dangerouslySetInnerHTML={{__html:htmlShapes}} />
                         </div>
                         <button 
                         className="btn btn-primary"
@@ -57,7 +56,7 @@ function mapStateToProps(state) {
     };
 }
 
-function appendSvgPaths(listOfSvgPaths){
+function appendSvgPaths(listOfSvgPaths) {
     var svg = "";
     for (var i = 0; i < listOfSvgPaths.length; i++ ){
         svg += listOfSvgPaths[i]
@@ -68,7 +67,7 @@ function appendSvgPaths(listOfSvgPaths){
 // need api stub
 
 function matchDispatchToProps(dispatch){
-    return bindActionCreators({renderCanvas: renderCanvas}, dispatch);
+    return bindActionCreators({renderCanvas: renderCanvas, changeVersion:changeVersion }, dispatch);
 }
 
 export default connect(mapStateToProps, matchDispatchToProps)(Canvas);
