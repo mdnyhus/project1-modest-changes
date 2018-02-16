@@ -324,7 +324,7 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 		return nil
 	}
 
-	reply.OpHash = hash.String()
+	reply.OpHash = hash.ToString()
 	// Get ink
 	getInkArgs := blockartlib.GetInkArgs{Miner: publicKey}
 	return l.GetInk(&getInkArgs, &reply.InkRemaining)
@@ -622,7 +622,7 @@ func findOpMeta(opHash string) (opMeta *OpMeta) {
 		block := blockMeta.block
 		// search through the block's ops
 		for _, opMeta := range block.ops {
-			if opMeta.hash.String() == opHash {
+			if opMeta.hash.ToString() == opHash {
 				// opMeta was found
 				return &opMeta
 			}
