@@ -190,6 +190,7 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 			oldOps := currBlock.ops
 			currBlock.ops = []OpMeta{}
 			verificationChan := make(chan error, 1)
+
 			for _, oldOp := range oldOps {
 				// go through ops sequentially for simplicity
 				// TODO - if runtime is really bad, could make it parallel
@@ -337,16 +338,9 @@ func (l *LibMin) AddShapeIM(args *blockartlib.AddShapeArgs, reply *blockartlib.A
 		close(opChan)
 	}(opChan, returnChan, opChansKey)
 
-	// receiveNewOp will try to add opMeta to current block and flood opMeta
-	if err = receiveNewOp(opMeta); err != nil {
-		// return error in reply so that it is not cast
-		reply.Error = err
-		return nil
-	}
-
 	resultErr := <-returnChan
 	if resultErr != nil {
-		reply.Error = err
+		reply.Error = resultErr
 		return nil
 	}
 
@@ -462,13 +456,6 @@ func (l *LibMin) DeleteShapeIM(args *blockartlib.DeleteShapeArgs, reply *blockar
 		close(opChan)
 	}(opChan, returnChan, opChansKey)
 
-	// receiveNewOp will try to add op to current block and flood op
-	if err = receiveNewOp(opMeta); err != nil {
-		// return error in reply so that it is not cast
-		reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
-		return nil
-	}
-
 	resultErr := <-returnChan
 	if resultErr != nil {
 		reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
@@ -555,6 +542,14 @@ func (l *LibMin) GetChildrenIM(args *string, reply *blockartlib.GetChildrenReply
 // @param validateNum: the number of blocks required after a block containing opMeta in the blockchain
 //                     for the add to ba success
 func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta OpMeta, validateNum uint8) {
+	// receiveNewOp will try to add opMeta to current block and flood opMeta
+	if err := receiveNewOp(opMeta); err != nil {
+		// return error in reply so that it is not cast
+		returnChan <- err
+		return
+	}
+
+	// wait for op to be added
 	for {
 		blockMeta := <-opChan
 		// idea - see if opMeta appears in the chain for this block
@@ -893,6 +888,7 @@ func verifyOps(block Block) error {
 		if err != nil {
 			return err
 		}
+		pendingVerifications--
 	}
 
 	return nil
@@ -937,19 +933,24 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 		}
 
 		// Ensure shape is on the canvas.
-		if !blockartlib.IsShapeInCanvas(shape) {
+		if !IsShapeInCanvas(shape) {
 			ch <- blockartlib.OutOfBoundsError{}
 			return
 		}
 
 		// Ensure miner has enough ink.
-		inkAvail := inkAvail(candidateOp.owner, blockMeta)
+		var ink uint32
 		if indexInBlock >= 0 {
 			// op is in the block, so don't double count the ink it uses
-			inkAvail -= shape.Ink
+			ink = inkAvail(candidateOp.owner, blockMeta)
+			ink += shape.Ink
+		} else {
+			// if indexInBlock == -1, this is a new op
+			ink = inkAvailCurr()
 		}
-		if inkAvail < shape.Ink {
-			ch <- blockartlib.InsufficientInkError(inkAvail)
+
+		if ink < shape.Ink {
+			ch <- blockartlib.InsufficientInkError(ink)
 			return
 		}
 
@@ -969,6 +970,7 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 					ch <- blockartlib.OutOfBoundsError{}
 					return
 				}
+
 				if candidateOpMeta.op.owner != opMeta.op.owner {
 					if blockartlib.ShapesIntersect(shape, opMeta.op.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
 						ch <- blockartlib.ShapeOverlapError(candidateOpMeta.op.shapeMeta.Hash)
@@ -1010,7 +1012,7 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 					return
 				}
 
-				if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == opMeta.op.deleteShapeHash {
+				if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == candidateOpMeta.op.deleteShapeHash {
 					// found the op for adding the shape
 					if opMeta.op.owner == candidateOp.owner {
 						// correct owner
@@ -1044,6 +1046,41 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 
 	ch <- nil
 	return
+}
+
+/*
+	I know it's bad to copy, but just trying to get it to work
+	Check if all the edges in the shape are within the campus
+	@param: takes a shape assembled from the svg string, checks the list of edges' absolute points
+	@return: boolean if all edges are within the canvas
+*/
+func IsShapeInCanvas(shape blockartlib.Shape) bool {
+	canvasXMax := float64(minerNetSettings.CanvasSettings.CanvasXMax)
+	canvasYMax := float64(minerNetSettings.CanvasSettings.CanvasYMax)
+	for _, edge := range shape.Edges {
+		if edge.Start.X < 0 || edge.Start.Y < 0 || edge.End.X < 0 || edge.End.Y < 0 {
+			return false
+		}
+
+		if !floatEquals(edge.Start.X, canvasXMax) && edge.Start.X > canvasXMax {
+			return false
+		}
+		if !floatEquals(edge.Start.Y, canvasYMax) && edge.Start.Y > canvasYMax {
+			return false
+		}
+		if !floatEquals(edge.End.X, canvasXMax) && edge.End.X > canvasXMax {
+			return false
+		}
+		if !floatEquals(edge.End.Y, canvasYMax) && edge.End.Y > canvasYMax {
+			return false
+		}
+	}
+	return true
+}
+
+// Again copied, sorry
+func floatEquals(a, b float64) bool {
+	return (a-b) < blockartlib.EPSILON && (b-a) < blockartlib.EPSILON
 }
 
 // Sends op to all neighbours.
@@ -1113,6 +1150,13 @@ func receiveNewOp(opMeta OpMeta) (err error) {
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
+	for _, curOpMeta := range currBlock.ops {
+		if opMeta.hash.ToString() == curOpMeta.hash.ToString() {
+			// already aware of this op
+			return nil
+		}
+	}
+
 	// check if op is valid
 	verifyCh := make(chan error, 1)
 	pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
@@ -1151,18 +1195,6 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 		return err
 	}
 
-	if shape.FilledIn != candidateShape.FilledIn {
-		return blockartlib.OutOfBoundsError{}
-	}
-
-	if shape.FillColor != candidateShape.FillColor {
-		return blockartlib.OutOfBoundsError{}
-	}
-
-	if shape.BorderColor != candidateShape.BorderColor {
-		return blockartlib.OutOfBoundsError{}
-	}
-
 	if len(shape.Edges) != len(candidateShape.Edges) {
 		return blockartlib.OutOfBoundsError{}
 	}
@@ -1172,16 +1204,14 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 	edges := shape.Edges
 	sort.Sort(blockartlib.Edges(shape.Edges))
 
-	for _, e1 := range edges {
-		for _, e2 := range candidateEdges {
-			if e1 != e2 {
-				return blockartlib.OutOfBoundsError{}
-			}
+	for i := 0; i < len(edges); i++ {
+		if edges[i] != candidateEdges[i] {
+			return blockartlib.OutOfBoundsError{}
 		}
 	}
 
 	// Ensure accuracy of Ink parameter.
-	ink, err := blockartlib.InkUsed(shape)
+	ink, err := blockartlib.InkUsed(&candidateShape)
 	if err != nil {
 		return err
 	}
@@ -1194,7 +1224,7 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 		return blockartlib.OutOfBoundsError{}
 	}
 
-	return blockartlib.OutOfBoundsError{}
+	return nil
 }
 
 ///////////////////////////////////////////////////////////
@@ -1220,13 +1250,13 @@ type inkAvailCrawlReply struct {
 //                    done in both situations)
 // @return err error: any errors encountered
 func inkAvailCrawlHelper(blockMeta *BlockMeta, args interface{}, reply interface{}) (done bool, err error) {
-	crawlArgs, ok := args.(inkAvailCrawlArgs)
+	crawlArgs, ok := args.(*inkAvailCrawlArgs)
 	if !ok {
 		// args is invalid; return an error
 		return true, blockartlib.DisconnectedError("")
 	}
 
-	crawlReply, ok := reply.(inkAvailCrawlReply)
+	crawlReply, ok := reply.(*inkAvailCrawlReply)
 	if !ok {
 		// reply is invalid; return an error
 		return true, blockartlib.DisconnectedError("")
@@ -1267,8 +1297,6 @@ func inkAvailCrawlHelper(blockMeta *BlockMeta, args interface{}, reply interface
 			crawlReply.ink += minerNetSettings.InkPerOpBlock
 		}
 	}
-
-	// TODO - add ink if crawlArgs.miner mined this block
 
 	// Continue searching down the chain
 	return false, nil
@@ -1359,7 +1387,6 @@ func registerMinerToServer() error {
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
 	clientErr := serverConn.Call("RServer.Register", minerSettings, &minerNetSettings)
 	if clientErr != nil {
-		fmt.Println(clientErr)
 		return ServerConnectionError("registration failure ")
 	}
 	return nil
@@ -1487,7 +1514,7 @@ func mine() {
 	// for numTries = 100000 (100 thousand), found solutions every ~30/45 seconds
 	// for numTries = 1000000 (1 million), found nonces every 1-5 seconds
 	// TODO - find best value
-	numTries := 1000000 / 2
+	numTries := 1000000
 
 	// so that we don't check the same nonce again and again,
 	// keep a value that is always incremented. It will (eventually)
@@ -1504,7 +1531,6 @@ func mine() {
 			nonceTry++
 			hash := hashBlock(*currBlock)
 			if err := verifyBlockNonce(hash.ToString(), len(currBlock.ops) == 0); err == nil {
-
 				// currBlock is now a valid block
 				// so create BlockMeta to wrap around currBlock
 				r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
@@ -1595,6 +1621,17 @@ func main() {
 	gob.Register(elliptic.P256())
 	gob.Register(elliptic.P384())
 	gob.Register(elliptic.P521())
+
+	// register any errors this might send
+	gob.Register(blockartlib.DisconnectedError(""))
+	gob.Register(blockartlib.InsufficientInkError(0))
+	gob.Register(blockartlib.InvalidShapeSvgStringError(""))
+	gob.Register(blockartlib.ShapeSvgStringTooLongError(""))
+	gob.Register(blockartlib.InvalidShapeHashError(""))
+	gob.Register(blockartlib.ShapeOwnerError(""))
+	gob.Register(blockartlib.ShapeOverlapError(""))
+	gob.Register(blockartlib.InvalidBlockHashError(""))
+	gob.Register(blockartlib.OutOfBoundsError{})
 
 	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {

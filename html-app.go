@@ -178,7 +178,7 @@ func main() {
 
 	// write html file
 	file, _ := os.OpenFile("./html-app.html", os.O_RDWR|os.O_CREATE, 0666)
-	file.Write([]byte("<svg>\n"))
+	file.Write([]byte(fmt.Sprintf("<svg style=\"height: %dpx; width: %dpx\">\n", settings.CanvasXMax, settings.CanvasYMax))
 
 	for i := 0; i < len(svgStrings); i++ {
 		fmt.Println(svgStrings[i])

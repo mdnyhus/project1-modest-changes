@@ -16,7 +16,6 @@ import (
 	"net/rpc"
 	"os"
 	"sync"
-	"time"
 )
 
 // Represents a type of shape in the BlockArt system.
@@ -71,11 +70,11 @@ func (h Hash) ToString() string {
 }
 
 type Point struct {
-	x, y float64
+	X, Y float64
 }
 
 type Edge struct {
-	start, end Point
+	Start, End Point
 }
 
 type Edges []Edge
@@ -86,7 +85,7 @@ type ShapeMeta struct {
 }
 
 type Shape struct {
-	Timestamp   time.Time
+	Timestamp   int64
 	Svg         string
 	Edges       Edges
 	FilledIn    bool
@@ -120,14 +119,14 @@ func (e InsufficientInkError) Error() string {
 	return fmt.Sprintf("BlockArt: Not enough ink to addShape [%d]", uint32(e))
 }
 
-// Contains the offending svg string.
+// Contains the offEnding svg string.
 type InvalidShapeSvgStringError string
 
 func (e InvalidShapeSvgStringError) Error() string {
 	return fmt.Sprintf("BlockArt: Bad shape svg string [%s]", string(e))
 }
 
-// Contains the offending svg string.
+// Contains the offEnding svg string.
 type ShapeSvgStringTooLongError string
 
 func (e ShapeSvgStringTooLongError) Error() string {
@@ -269,7 +268,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	return canvasT, setting, nil
 }
 
-// Renders the canvas in HTML.
+// REnders the canvas in HTML.
 func PaintCanvas() {
 	htmlContent := []byte("hello\ngo\n")
 	current, _ := os.Getwd()
@@ -288,14 +287,14 @@ func (e Edges) Swap(i, j int) {
 }
 
 func (e Edges) Less(i, j int) bool {
-	isx := e[i].start.x
-	isy := e[i].start.y
-	iex := e[i].end.x
-	iey := e[i].end.y
-	jsx := e[j].start.x
-	jsy := e[j].start.y
-	jex := e[j].end.x
-	jey := e[j].end.y
+	isx := e[i].Start.X
+	isy := e[i].Start.Y
+	iex := e[i].End.X
+	iey := e[i].End.Y
+	jsx := e[j].Start.X
+	jsy := e[j].Start.Y
+	jex := e[j].End.X
+	jey := e[j].End.Y
 
 	if isx != jsx {
 		return isx < jsx
