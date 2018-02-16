@@ -221,10 +221,15 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
 	@return: internal shape struct ; error otherwise
 */
 func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (*Shape, error) {
+	var err error
 	var shape *Shape
 	if shapeType == PATH {
-		var err error
 		shape, err = svgToShape(shapeSvgString)
+		if err != nil {
+			return nil, err
+		}
+	} else if shapeType == CIRCLE {
+		shape, err = svgToCircleShape(shapeSvgString)
 		if err != nil {
 			return nil, err
 		}
@@ -235,9 +240,36 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	shape.BorderColor = stroke
 	shape.Timestamp = time.Now().UnixNano()
 
-	var err error
 	shape.Ink, err = InkUsed(shape)
 	return shape, err
+}
+
+// Turn circle svg string into shape
+// @param svg string: In format "cx,cy,r"
+// - (cx, cy) = coordinate of the centre of the circle
+// - r = radius of circle
+func svgToCircleShape(svg string) (*Shape, error) {
+	shape := Shape{}
+	shape.IsCircle = true
+	// Remove all whitespace in string (just to be careful)
+	svg = strings.Replace(svg, " ", "", -1)
+	svgParts := strings.Split(svg, ",")
+	if len(svgParts) != 3 {
+		return nil, InvalidShapeSvgStringError(svg + " is not a valid circle string. Use format cx,cy,r")
+	}
+	cx, err := strconv.Atoi(svgParts[0])
+	if err != nil {
+		return nil, err
+	}
+	shape.Cx = cx
+	cy, err := strconv.Atoi(svgParts[1])
+	if err != nil {
+		return nil, err
+	}
+	shape.Cy = cy
+	r, err := strconv.Atoi(svgParts[2])
+	shape.Radius = r
+	return &shape, nil
 }
 
 /*
