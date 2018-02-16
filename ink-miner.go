@@ -963,7 +963,6 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 			}
 		}
 	} else {
-		// TODO: Return error if already encountered @Matthew
 		// op is a delete; verify shape existed on the canvas, and belonged to this miner
 		curr := blockMeta
 		for {
@@ -975,6 +974,13 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 				if curr.block.prev.ToString() == blockMeta.block.prev.ToString() && indexInBlock >= 0 && i >= indexInBlock {
 					// this op is after candidateOpMeta
 					continue
+				}
+
+				// check duplicate
+				if opMeta.hash.ToString() == candidateOpMeta.hash.ToString() {
+					// op is a duplicate; this is an error
+					ch <- blockartlib.ShapeOwnerError(candidateOp.deleteShapeHash)
+					return
 				}
 
 				if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == opMeta.op.deleteShapeHash {
