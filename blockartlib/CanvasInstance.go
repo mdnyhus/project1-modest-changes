@@ -53,7 +53,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		ShapeMeta:   shapeMeta,
 		ValidateNum: validateNum}
 	var reply AddShapeReply
-	if err = canvas.client.Call("LibMin.AddShape", args, &reply); err != nil {
+	if err = canvas.client.Call("LibMin.AddShapeIM", args, &reply); err != nil {
 		return hash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -70,7 +70,7 @@ func (canvas CanvasInstance) GetSvgString(shapeHash string) (svgString string, e
 
 	args := &GetSvgStringArgs{OpHash: shapeHash}
 	var reply GetSvgStringReply
-	if canvas.client.Call("LibMin.GetSvgString", args, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetSvgStringIM", args, &reply); err != nil {
 		return svgString, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -88,10 +88,11 @@ func (canvas CanvasInstance) GetInk() (inkRemaining uint32, err error) {
 	// args are not used for GetInk
 	var args int
 	var reply uint32
-	if canvas.client.Call("LibMin.GetInk", &args, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetInkIM", args, &reply); err != nil {
 		return inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
+	// return reply, nil
 	return reply, nil
 }
 
@@ -105,7 +106,7 @@ func (canvas CanvasInstance) DeleteShape(validateNum uint8, shapeHash string) (i
 
 	args := &DeleteShapeArgs{ValidateNum: validateNum, ShapeHash: shapeHash}
 	var reply DeleteShapeReply
-	if canvas.client.Call("LibMin.DeleteShape", args, &reply); err != nil {
+	if canvas.client.Call("LibMin.DeleteShapeIM", args, &reply); err != nil {
 		return inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -121,7 +122,7 @@ func (canvas CanvasInstance) GetShapes(blockHash string) (shapeHashes []string, 
 	}
 
 	var reply GetShapesReply
-	if canvas.client.Call("LibMin.GetShapes", &blockHash, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetShapesIM", &blockHash, &reply); err != nil {
 		return shapeHashes, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -136,8 +137,9 @@ func (canvas CanvasInstance) GetGenesisBlock() (blockHash string, err error) {
 		return blockHash, DisconnectedError(canvas.minerAddr)
 	}
 
+	var args int
 	var reply string
-	if canvas.client.Call("LibMin.GetGenesisBlock", nil, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetGenesisBlockIM", args, &reply); err != nil {
 		return blockHash, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -153,7 +155,7 @@ func (canvas CanvasInstance) GetChildren(blockHash string) (blockHashes []string
 	}
 
 	var reply GetChildrenReply
-	if canvas.client.Call("LibMin.GetChildren", &blockHash, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetChildrenIM", &blockHash, &reply); err != nil {
 		return blockHashes, DisconnectedError(canvas.minerAddr)
 	}
 
@@ -172,7 +174,7 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
 
 	// get the ink remaining
 	var reply uint32
-	if canvas.client.Call("LibMin.GetInk", nil, &reply); err != nil {
+	if canvas.client.Call("LibMin.GetInkIM", nil, &reply); err != nil {
 		return inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
