@@ -76,7 +76,7 @@ type Op struct {
 	owner           ecdsa.PublicKey        // public key of miner that issued this op.
 }
 
-func (o Op) String() string {
+func (o Op) ToString() string {
 	return fmt.Sprintf("%v", o)
 }
 
@@ -146,15 +146,13 @@ func (e MinerSettingNotFound) Error() string {
 // op if it is valid.
 // @param op *Op: Op which will be verified, and potentially added and flooeded
 // @param reply *bool: Bool indicating whether op was successfully validated
-// @return error: TODO
+// @return err error: Any errors in receiving op.
 func (m *MinMin) NotifyNewOp(opMeta *OpMeta, reply *bool) (err error) {
-	// TODO - check if op has already been seen, and only flood if it is new
-	// if op is validated, receiveNewOp will put op in currBlock and flood the op
-	*reply = false
-	if e := receiveNewOp(*opMeta); e == nil {
+	*reply = true
+	if e := receiveNewOp(*opMeta); e != nil {
 		// validate was successful only if error is null
-		// TODO - is the error  useful?
-		*reply = true
+		*reply = false
+		return e
 	}
 	return nil
 }
@@ -265,7 +263,6 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 	if args.Priv != privateKey || args.Pub != publicKey {
 		return blockartlib.DisconnectedError("")
 	}
-	// TODO: Do we want canvas settings?
 	*reply = blockartlib.OpenCanvasReply{CanvasSettings: minerNetSettings.CanvasSettings}
 	return nil
 }
@@ -359,7 +356,6 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 // @param err error: Any errors produced
 func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error) {
 	// acquire currBlock's lock
-	// TODO - is this needed? it's read-only (is it?)
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
@@ -465,14 +461,13 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 // @param reply *uint32: hash of genesis block
 // @param err error: Any errors produced
 func (l *LibMin) GetGenesisBlock(args *int, reply *blockartlib.Hash) (err error) {
-	if minerNetSettings.GenesisBlockHash == blockartlib.Hash([]byte{}).String() {
+	if minerNetSettings.GenesisBlockHash == blockartlib.Hash([]byte{}).ToString() {
 		return GensisBlockNotFound("")
 	}
 	*reply, _ = hex.DecodeString(minerNetSettings.GenesisBlockHash)
 	return nil
 }
 
-// TODO
 // Returns the shape hashes contained by the block in BlockHash
 // NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 // do not search externally; assume that any external blocks will get
@@ -533,7 +528,7 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta Op
 			}
 
 			var ok bool
-			if cur, ok = blockTree[cur.block.prev.String()]; !ok {
+			if cur, ok = blockTree[cur.block.prev.ToString()]; !ok {
 				// chain should have been valid, this should never happen
 				// just ignore this block
 				break chainCrawl
@@ -557,7 +552,7 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta Op
 // @param block2: the second OpMeta to compare
 // @return bool: true if the OpMetas are equal, false otherwise
 func opMetasEqual(opMeta1 OpMeta, opMeta2 OpMeta) bool {
-	return opMeta1.hash.String() == opMeta2.hash.String() && opMeta1.r.Cmp(&opMeta2.r) == 0 && opMeta1.s.Cmp(&opMeta2.s) == 0 && opMeta1.op == opMeta2.op
+	return opMeta1.hash.ToString() == opMeta2.hash.ToString() && opMeta1.r.Cmp(&opMeta2.r) == 0 && opMeta1.s.Cmp(&opMeta2.s) == 0 && opMeta1.op == opMeta2.op
 }
 
 // Compares two blockMetas, and returns true if they are equal
@@ -565,7 +560,7 @@ func opMetasEqual(opMeta1 OpMeta, opMeta2 OpMeta) bool {
 // @param block2: the second blockMeta to compare
 // @return bool: true if the blockMetas are equal, false otherwise
 func blockMetasEqual(blockMeta1 BlockMeta, blockMeta2 BlockMeta) bool {
-	if blockMeta1.hash.String() != blockMeta2.hash.String() || blockMeta1.r.Cmp(&blockMeta2.r) != 0 || blockMeta1.s.Cmp(&blockMeta2.s) != 0 {
+	if blockMeta1.hash.ToString() != blockMeta2.hash.ToString() || blockMeta1.r.Cmp(&blockMeta2.r) != 0 || blockMeta1.s.Cmp(&blockMeta2.s) != 0 {
 		return false
 	}
 
@@ -578,7 +573,7 @@ func blockMetasEqual(blockMeta1 BlockMeta, blockMeta2 BlockMeta) bool {
 // @param block2: the second block to compare
 // @return bool: true if the blocks are equal, false otherwise
 func blocksEqual(block1 Block, block2 Block) bool {
-	if block1.prev.String() != block2.prev.String() || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
+	if block1.prev.ToString() != block2.prev.ToString() || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
 		return false
 	}
 
@@ -711,7 +706,7 @@ func crawlNoopHelper(blockMeta *BlockMeta, args interface{}, reply interface{}) 
 // @return Block: The requested block, or nil if no block is found.
 func crawlChainHelperGetBlock(hash blockartlib.Hash) (blockMeta *BlockMeta) {
 	// Search locally.
-	if blockMeta, ok := blockTree[hash.String()]; ok && blockMeta != nil {
+	if blockMeta, ok := blockTree[hash.ToString()]; ok && blockMeta != nil {
 		return blockMeta
 	}
 
@@ -740,7 +735,7 @@ func validateBlock(chain []*BlockMeta) (err error) {
 	blockMeta := *chain[0]
 
 	// Verify hash.
-	if hashBlock(blockMeta.block).String() != blockMeta.hash.String() {
+	if hashBlock(blockMeta.block).ToString() != blockMeta.hash.ToString() {
 		return blockartlib.InvalidBlockHashError(blockMeta.hash)
 	}
 	// Verify block signature.
@@ -764,12 +759,8 @@ func validateBlock(chain []*BlockMeta) (err error) {
 // @return bool: True iff block is genesis block.
 func isGenesis(blockMeta BlockMeta) bool {
 	block := blockMeta.block
-	// TODO: What is gensis def'n? Who signs it?
-	// TODO: def'n of Genesis block? ---> Is this the proper hash
-	return string(block.prev) == "" && hashBlock(block).String() == minerNetSettings.GenesisBlockHash
+	return block.prev.ToString() == "" && hashBlock(block).ToString() == minerNetSettings.GenesisBlockHash
 }
-
-// TODO: Might not be worth doing, but do we need seperate hash functions?
 
 // Returns hash of block.
 // @param block Block: Block to be hashed.
@@ -785,7 +776,7 @@ func hashBlock(block Block) blockartlib.Hash {
 // @return Hash: The hash of the op.
 func hashOp(op Op) blockartlib.Hash {
 	hasher := md5.New()
-	hasher.Write([]byte(op.String()))
+	hasher.Write([]byte(op.ToString()))
 	return blockartlib.Hash(hasher.Sum(nil)[:])
 }
 
@@ -845,8 +836,8 @@ func verifyOps(block Block) error {
 // @param ch chan<-error: The channel to which verification errors are piped into, or nil if no errors are found.
 func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch chan<- error) {
 	// Verify hash.
-	if hashOp(candidateOpMeta.op).String() != candidateOpMeta.hash.String() {
-		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.String())
+	if hashOp(candidateOpMeta.op).ToString() != candidateOpMeta.hash.ToString() {
+		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.ToString())
 		return
 	}
 
@@ -854,7 +845,7 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 
 	// Verify signature.
 	if !ecdsa.Verify(&candidateOp.owner, candidateOpMeta.hash, &candidateOpMeta.r, &candidateOpMeta.s) {
-		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.String())
+		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.ToString())
 		return
 	}
 
@@ -896,14 +887,13 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 			for i, opMeta := range curr.block.ops {
 				// test if curr == blockMeta
 				// aren't guaranteed blockMeta is a valid meta, just use block
-				if curr.block.prev.String() == blockMeta.block.prev.String() && i == indexInBlock {
+				if curr.block.prev.ToString() == blockMeta.block.prev.ToString() && i == indexInBlock {
 					// this is the op itself in the block; skip it
 					continue
 				}
 
 				// This op has been performed before.
-				if candidateOpMeta.hash.String() == opMeta.hash.String() {
-					// TODO: More specific error?
+				if candidateOpMeta.hash.ToString() == opMeta.hash.ToString() {
 					ch <- blockartlib.OutOfBoundsError{}
 					return
 				}
@@ -921,13 +911,14 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 			}
 
 			var ok bool
-			curr, ok = blockTree[curr.block.prev.String()]
+			curr, ok = blockTree[curr.block.prev.ToString()]
 			if !ok {
-				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.String())
+				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.ToString())
 				return
 			}
 		}
 	} else {
+		// TODO: Return error if already encountered @Matthew
 		// op is a delete; verify shape existed on the canvas, and belonged to this miner
 		curr := blockMeta
 		for {
@@ -936,7 +927,7 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 				// and if i >= 0, that's all ops with a *smaller* index
 				// test if curr == blockMeta, and that the
 				// aren't guaranteed blockMeta is a valid meta, just use block
-				if curr.block.prev.String() == blockMeta.block.prev.String() && indexInBlock >= 0 && i >= indexInBlock {
+				if curr.block.prev.ToString() == blockMeta.block.prev.ToString() && indexInBlock >= 0 && i >= indexInBlock {
 					// this op is after candidateOpMeta
 					continue
 				}
@@ -961,9 +952,9 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 			}
 
 			var ok bool
-			curr, ok = blockTree[curr.block.prev.String()]
+			curr, ok = blockTree[curr.block.prev.ToString()]
 			if !ok {
-				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.String())
+				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.ToString())
 				return
 			}
 		}
@@ -977,8 +968,6 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 	return
 }
 
-// TODO this and floodBlock currentl share almost all the code. If worth it, call helper
-//      function that takes the function and paramters.
 // Sends op to all neighbours.
 // LOCKS: Calls neighboursLock.Lock().
 // @param opMeta OpMeta: Op to be broadcast.
@@ -995,15 +984,11 @@ func floodOp(opMeta OpMeta) {
 		_ = n.conn.Go("NotifyNewOp", opMeta, &reply, replyChan)
 	}
 
-	// TODO: Handle errors, chain disagreements. Discuss with team.
-	// Current implementation simply sends out blocks and doesn't
-	// care about the response.
 	for replies != len(neighbours) {
 		select {
 		case <-replyChan:
 			replies++
 		case <-time.After(2 * time.Second):
-			// TODO Do we care? Noop for now.
 			replies++
 		}
 	}
@@ -1025,15 +1010,11 @@ func floodBlock(blockMeta BlockMeta) {
 		_ = n.conn.Go("NotifyNewBlock", blockMeta, &reply, replyChan)
 	}
 
-	// TODO: Handle errors, chain disagreements. Discuss with team.
-	// Current implementation simply sends out blocks and doesn't
-	// care about the response.
 	for replies != len(neighbours) {
 		select {
 		case <-replyChan:
 			replies++
 		case <-time.After(2 * time.Second):
-			// TODO Do we care? Noop for now.
 			replies++
 		}
 	}
@@ -1432,7 +1413,7 @@ func mine() {
 			currBlock.nonce = strconv.Itoa(nonceTry)
 			nonceTry++
 			currNonceHash := hashBlock(*currBlock)
-			if err := verifyBlockNonce(currNonceHash.String(), len(currBlock.ops) == 0); err == nil {
+			if err := verifyBlockNonce(currNonceHash.ToString(), len(currBlock.ops) == 0); err == nil {
 				// currBlock is now a valid block
 				// so create BlockMeta to wrap around currBlock
 				hash := hashBlock(*currBlock)
@@ -1514,7 +1495,6 @@ func main() {
 	publicKey = *parsedPublicKey.(*ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
 
-	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 	gob.Register(elliptic.P224())
@@ -1560,7 +1540,7 @@ func main() {
 
 	// create genesis block
 	genesisBlockMeta := &BlockMeta{hash: hash}
-	blockTree[hash.String()] = genesisBlockMeta
+	blockTree[hash.ToString()] = genesisBlockMeta
 	headBlockMeta = genesisBlockMeta
 
 	go startHeartBeat()
