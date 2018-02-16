@@ -55,6 +55,10 @@ var incomingAddress string
 // Network Instructions
 var minerNetSettings *rpcCommunication.MinerNetSettings
 
+// slice of operation threads' channels that need to know about new blocks
+var opChans = make(map[string](chan *BlockMeta))
+var opChansLock = &sync.Mutex{}
+
 // FIXME
 var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
@@ -180,6 +184,13 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 		headBlockMeta = blockMeta
 	}
 
+	// notify all opChans
+	for _, opChan := range opChans {
+		go func() {
+			opChan <- blockMeta
+		}()
+	}
+
 	floodBlock(*blockMeta)
 
 	return nil
@@ -238,14 +249,37 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 		op:   op,
 	}
 
-	// receiveNewOp will try to add op to current block and flood op
+	// set up channel for opReceiveNewBlock back result
+	returnChan := make(chan error)
+
+	// ensure hash is unique, even between add and delete shapes
+	opChansKey := args.ShapeMeta.Hash + "a"
+
+	// set up channel to receive new blocks
+	opChansLock.Lock()
+	opChan := make(chan *BlockMeta, 1)
+	opChans[opChansKey] = opChan
+	go opReceiveNewBlocks(opChan, returnChan, opMeta, args.ValidateNum)
+	opChansLock.Unlock()
+
+	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
+		// clean up channels
+		close(returnChan)
+		delete(opChans, key)
+		close(opChan)
+	}(opChan, returnChan, opChansKey)
+
+	// receiveNewOp will try to add opMeta to current block and flood opMeta
 	if err = receiveNewOp(opMeta); err != nil {
 		// return error in reply so that it is not cast
 		reply.Error = err
+		return nil
 	}
 
-	// TODO - wait until args.ValidateNum blocks have been added this block before returning
-
+	resultErr := <-returnChan
+	if resultErr != nil {
+		reply.Error = err
+	}
 	return nil
 }
 
@@ -314,13 +348,38 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 		op:   op,
 	}
 
+	// set up channel for opReceiveNewBlock back result
+	returnChan := make(chan error)
+
+	// ensure hash is unique, even between add and delete shapes
+	opChansKey := args.ShapeHash + "d"
+
+	// set up channel to receive new blocks
+	opChansLock.Lock()
+	opChan := make(chan *BlockMeta, 1)
+	opChans[opChansKey] = opChan
+	go opReceiveNewBlocks(opChan, returnChan, opMeta, args.ValidateNum)
+	opChansLock.Unlock()
+
+	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
+		// clean up channels
+		close(returnChan)
+		delete(opChans, key)
+		close(opChan)
+	}(opChan, returnChan, opChansKey)
+
 	// receiveNewOp will try to add op to current block and flood op
 	if err = receiveNewOp(opMeta); err != nil {
-		// delete shape can only return a ShapeOwnerError error
+		// return error in reply so that it is not cast
 		reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
+		return nil
 	}
 
-	// TODO - wait until args.ValidateNum blocks have been added this block before returning
+	resultErr := <-returnChan
+	if resultErr != nil {
+		reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
+		return nil
+	}
 
 	// Get ink
 	getInkArgs := blockartlib.GetInkArgs{Miner: publicKey}
@@ -393,6 +452,109 @@ func (l *LibMin) GetChildren(args *[]byte, reply *blockartlib.GetChildrenReply) 
 
 	reply.Error = nil
 	return nil
+}
+
+// TODO
+// Closes the canvas
+// @param args args *int: dummy argument that is not used
+// @param reply *uint32: hash of genesis block
+// @param err error: Any errors produced
+func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
+	// TODO
+	*reply = ""
+	return nil
+}
+
+// This helper function receives information about new blocks for the purpose of ensuring an operation
+// is successfully added to the blockchain
+// @param opChan: channel through which new blocks will be sent
+// @param returnChan: channel through which the result of this function should be sent
+// @param opMeta: the opMeta we're trying to get added to the blockchain
+// @param validateNum: the number of blocks required after a block containing opMeta in the blockchain
+//                     for the add to ba success
+func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta OpMeta, validateNum uint8) {
+	for {
+		blockMeta := <-opChan
+		// idea - see if opMeta appears in the chain for this block
+		// if it does, check that validateNum number of blocks have been added on top
+		// if it is not, and this is the new head, resend the block
+		cur := blockMeta
+		// can iterate through chain because block has already been validated
+		foundOp := false
+
+	chainCrawl:
+		for !isGenesis(*cur) {
+			for _, opIter := range cur.block.ops {
+				if opMetasEqual(opIter, opMeta) {
+					// found the opMeta in this chain
+					foundOp = true
+					if (blockMeta.block.len - cur.block.len) >= int(validateNum) {
+						// enough blocks have been added
+						returnChan <- nil
+						return
+					}
+
+					break chainCrawl
+				}
+			}
+
+			var ok bool
+			if cur, ok = blockTree[cur.block.prev.String()]; !ok {
+				// chain should have been valid, this should never happen
+				// just ignore this block
+				break chainCrawl
+			}
+		}
+
+		if !foundOp && blockMetasEqual(*blockMeta, *headBlockMeta) {
+			// opMeta is not in the longest chain; resend the opMeta and flood it
+			if err := receiveNewOp(opMeta); err != nil {
+				// new longest chain now has a conflict with the
+				// return error in reply so that it is not cast
+				returnChan <- err
+				return
+			}
+		}
+	}
+}
+
+// Compares two OpMetas, and returns true if they are equal
+// @param block1: the first OpMeta to compare
+// @param block2: the second OpMeta to compare
+// @return bool: true if the OpMetas are equal, false otherwise
+func opMetasEqual(opMeta1 OpMeta, opMeta2 OpMeta) bool {
+	return opMeta1.hash.String() == opMeta2.hash.String() && opMeta1.r.Cmp(&opMeta2.r) == 0 && opMeta1.s.Cmp(&opMeta2.s) == 0 && opMeta1.op == opMeta2.op
+}
+
+// Compares two blockMetas, and returns true if they are equal
+// @param block1: the first blockMeta to compare
+// @param block2: the second blockMeta to compare
+// @return bool: true if the blockMetas are equal, false otherwise
+func blockMetasEqual(blockMeta1 BlockMeta, blockMeta2 BlockMeta) bool {
+	if blockMeta1.hash.String() != blockMeta2.hash.String() || blockMeta1.r.Cmp(&blockMeta2.r) != 0 || blockMeta1.s.Cmp(&blockMeta2.s) != 0 {
+		return false
+	}
+
+	return blocksEqual(blockMeta1.block, blockMeta2.block)
+}
+
+// Compares two blocks, and returns true if they are equal
+// For block.ops, the operations must be in the same order
+// @param block1: the first block to compare
+// @param block2: the second block to compare
+// @return bool: true if the blocks are equal, false otherwise
+func blocksEqual(block1 Block, block2 Block) bool {
+	if block1.prev.String() != block2.prev.String() || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
+		return false
+	}
+
+	for i := 0; i < len(block1.ops); i++ {
+		if !opMetasEqual(block1.ops[i], block2.ops[i]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Searches for a shape in the set of local blocks with the given hash.
