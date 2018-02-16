@@ -1527,7 +1527,7 @@ func main() {
 	server.Register(libMin)
 	// need automatic port generation
 	ip := strings.Split(outgoingAddress, ":")
-	l, e := net.Listen("tcp", ip[0]+":0")
+	l, e := net.Listen("tcp", ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
