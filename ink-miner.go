@@ -1619,7 +1619,7 @@ func main() {
 	}
 	go serverLibMin.Accept(l)
 	incomingAddress = l.Addr().String()
-	fmt.Println("Listening on " + incomingAddress)
+	fmt.Printf("Listening for blockartlib calls on address: %s\n", incomingAddress)
 
 	// second, MinMin
 	serverMinMin := rpc.NewServer()
