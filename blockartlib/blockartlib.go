@@ -94,9 +94,9 @@ type Shape struct {
 	Ink         uint32 //todo: are there different ink levels for different colors?
 	// ---- Circle properties, only access these if IsCircle is true!
 	IsCircle	bool // zero value of a boolean is false
-	Radius		int
-	Cx			int
-	Cy			int
+	Radius		float64
+	Cx			float64
+	Cy			float64
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////

@@ -257,17 +257,17 @@ func svgToCircleShape(svg string) (*Shape, error) {
 	if len(svgParts) != 3 {
 		return nil, InvalidShapeSvgStringError(svg + " is not a valid circle string. Use format cx,cy,r")
 	}
-	cx, err := strconv.Atoi(svgParts[0])
+	cx, err := strconv.ParseFloat(svgParts[0], 64)
 	if err != nil {
 		return nil, err
 	}
 	shape.Cx = cx
-	cy, err := strconv.Atoi(svgParts[1])
+	cy, err := strconv.ParseFloat(svgParts[1], 64)
 	if err != nil {
 		return nil, err
 	}
 	shape.Cy = cy
-	r, err := strconv.Atoi(svgParts[2])
+	r, err := strconv.ParseFloat(svgParts[2], 64)
 	shape.Radius = r
 	return &shape, nil
 }
@@ -308,24 +308,41 @@ func svgToShape(svgString string) (*Shape, error) {
 func IsShapeInCanvas(shape Shape) bool {
 	canvasXMax := float64(canvasT.settings.CanvasXMax)
 	canvasYMax := float64(canvasT.settings.CanvasYMax)
-	for _, edge := range shape.Edges {
-		if edge.Start.X < 0 || edge.Start.Y < 0 || edge.End.X < 0 || edge.End.Y < 0 {
-			return false
-		}
+	if !shape.IsCircle {
+		for _, edge := range shape.Edges {
+			if edge.Start.X < 0 || edge.Start.Y < 0 || edge.End.X < 0 || edge.End.Y < 0 {
+				return false
+			}
 
-		if !floatEquals(edge.Start.X, canvasXMax) && edge.Start.X > canvasXMax {
+			if !floatEquals(edge.Start.X, canvasXMax) && edge.Start.X > canvasXMax {
+				return false
+			}
+			if !floatEquals(edge.Start.Y, canvasYMax) && edge.Start.Y > canvasYMax {
+				return false
+			}
+			if !floatEquals(edge.End.X, canvasXMax) && edge.End.X > canvasXMax {
+				return false
+			}
+			if !floatEquals(edge.End.Y, canvasYMax) && edge.End.Y > canvasYMax {
+				return false
+			}
+		}
+	} else if shape.IsCircle {
+		left := shape.Cx - shape.Radius
+		right := shape.Cx + shape.Radius
+		top := shape.Cy - shape.Radius
+		bottom := shape.Cy + shape.Radius
+		if left < 0 || top < 0 {
 			return false
 		}
-		if !floatEquals(edge.Start.Y, canvasYMax) && edge.Start.Y > canvasYMax {
+		if !floatEquals(right, canvasXMax) && right > canvasXMax {
 			return false
 		}
-		if !floatEquals(edge.End.X, canvasXMax) && edge.End.X > canvasXMax {
-			return false
-		}
-		if !floatEquals(edge.End.Y, canvasYMax) && edge.End.Y > canvasYMax {
+		if !floatEquals(bottom, canvasYMax) && bottom > canvasYMax {
 			return false
 		}
 	}
+
 	return true
 }
 
