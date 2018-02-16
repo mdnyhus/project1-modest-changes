@@ -42,7 +42,7 @@ type MinerSettings struct {
 // Settings for an instance of the BlockArt project/network.
 type MinerNetSettings struct {
 	// Hash of the very first (empty) block in the chain.
-	GenesisBlockHash blockartlib.Hash
+	GenesisBlockHash string
 
 	// The minimum number of ink miners that an ink miner should be
 	// connected to.
