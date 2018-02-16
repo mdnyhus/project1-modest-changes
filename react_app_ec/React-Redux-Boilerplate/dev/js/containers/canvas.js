@@ -16,27 +16,34 @@ class Canvas extends Component {
         var width = this.props.canvas.width;
         var height = this.props.canvas.height;
         var htmlShapes
+        var historyList
         if (this.props.canvas.shapeHistory.length !== 0){
             var shapeHistory = this.props.canvas.shapeHistory;
             var currentVersion = shapeHistory.length - 1;
             var shapes = shapeHistory[currentVersion]
-            htmlShapes = shapes.map((shape, index) =>
-                <div key={index} dangerouslySetInnerHTML={{__html: shape}}/>
+            htmlShapes = appendSvgPaths(shapeHistory[currentVersion])
+            historyList = shapeHistory.map((version, index)=> 
+
+                <li key={index}>
+                    <a onClick={()=>{console.log("sup")}}>Version: {index + 1}</a>
+                </li>    
             );
         }
         return (
             <div className="container">
                 <div className="row">
-                    <div className="col-md">
+                    <div className="col-md-6">
+                        <h1>Canvas</h1>
                         <div id="canvas" style={{width: width, height: height}} className="canvas">
-                            {htmlShapes}
+                            <div dangerouslySetInnerHTML={{__html: htmlShapes}} />
                         </div>
                         <button 
                         className="btn btn-primary"
-                        onClick={() => this.props.renderCanvas(['<svg height="210" width="400"><path d="M150 0 L75 200 L225 200 Z" /></svg>','<svg height="210" width="400"><path d="M250 0 L75 200 L225 200 Z" /></svg>'])}>Render</button>
+                        onClick={() => this.props.renderCanvas(['<path d="M50 0 L25 20 L225 200 Z" />','<path d="M250 0 L75 200 L225 200 Z" />'])}>Render</button>
                     </div>
-                    <div className="col-md">
+                    <div className="col-md-6">
                         <h1>History</h1>
+                        {historyList}
                     </div>
                 </div>
             </div>
@@ -49,6 +56,16 @@ function mapStateToProps(state) {
         canvas: state.canvas
     };
 }
+
+function appendSvgPaths(listOfSvgPaths){
+    var svg = "";
+    for (var i = 0; i < listOfSvgPaths.length; i++ ){
+        svg += listOfSvgPaths[i]
+    }
+    return "<svg>" + svg + "</svg>"
+}
+
+// need api stub
 
 function matchDispatchToProps(dispatch){
     return bindActionCreators({renderCanvas: renderCanvas}, dispatch);

@@ -4,7 +4,6 @@ require('../../scss/style.scss');
 
 const App = () => (
     <div>
-        <h2>Canvas</h2>
         <Canvas />
     </div>
 );
