@@ -66,7 +66,7 @@ type MinerNetSettings struct {
 
 type Hash []byte
 
-func (h Hash) String() string {
+func (h Hash) ToString() string {
 	return hex.EncodeToString(h)
 }
 
