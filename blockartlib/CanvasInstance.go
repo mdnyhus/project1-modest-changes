@@ -511,7 +511,7 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		} else {
 			return 0, err
 		}
-		if !isSimpleShape(shape) {
+		if !IsSimpleShape(shape) {
 			return 0, errors.New("Can't have non-transparent ink if shape has self-intersecting edges")
 		}
 	}
@@ -530,7 +530,7 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 // Checks if shape is closed and simple
 // @param shape Shape
 // @return bool
-func isSimpleShape(shape *Shape) bool {
+func IsSimpleShape(shape *Shape) bool {
 	// Check if the edges don't self-intersect ("simple")
 	for i := 0; i < len(shape.Edges); i++ {
 		for j := i + 1; j < len(shape.Edges); j++ {

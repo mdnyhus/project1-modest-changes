@@ -859,6 +859,12 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 	}
 
 	if candidateOp.shapeMeta != nil {
+		// Verify shape.
+		if err := validateShape(candidateOp.shapeMeta); err != nil {
+			ch <- err
+			return
+		}
+
 		// Verify op with shape.
 		shape := candidateOp.shapeMeta.Shape
 		// Ensure svg string isn't beyond the maximum specified length.
@@ -874,13 +880,12 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch
 		}
 
 		// Ensure miner has enough ink.
-		ink, err := blockartlib.InkUsed(&shape)
 		inkAvail := inkAvail(candidateOp.owner, blockMeta)
 		if indexInBlock >= 0 {
 			// op is in the block, so don't double count the ink it uses
 			inkAvail -= ink
 		}
-		if err != nil || inkAvail < ink {
+		if err != nil || inkAvail < shape.Ink {
 			ch <- blockartlib.InsufficientInkError(inkAvail)
 			return
 		}
@@ -1078,7 +1083,6 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 
 	// Ensure hash is correct.
 	if candidateShapeMeta.Hash != blockartlib.HashShape(candidateShape) {
-		// TODO: No custom error type?
 		return blockartlib.OutOfBoundsError{}
 	}
 
@@ -1127,8 +1131,9 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 		return blockartlib.OutOfBoundsError{}
 	}
 
-	// TODO: Check if shape is self-intersecting. Depends on Justin's PR.
-	//       Invoke function `isSimpleShape`
+	if !blockartlib.IsSimpleShape(shape) {
+		return blockartlib.OutOfBoundsError{}
+	}
 
 	return blockartlib.OutOfBoundsError{}
 }
