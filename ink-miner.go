@@ -1464,6 +1464,7 @@ func mine() {
 	}
 }
 
+// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`"
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
