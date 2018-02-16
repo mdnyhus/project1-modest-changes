@@ -19,6 +19,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -29,9 +30,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"encoding/hex"
-	//"crypto/x509"
-	//"encoding/pem"
+	"crypto/x509"
 )
 
 // Static
@@ -1465,13 +1464,13 @@ func mine() {
 	}
 }
 
+// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`"
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
-	//numArgs := 3
-	numArgs := 1
+	numArgs := 3
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1486,37 +1485,25 @@ func main() {
 
 	outgoingAddress = args[0]
 
-	//TODO: verify if this parse is this correct?
-
-	/*
-	pub, _ := pem.Decode([]byte(args[1]))
-	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub.Bytes)
+	pub, err := hex.DecodeString(args[1])
+	if err != nil {
+		fmt.Println(args[1])
+		panic(err)
+	}
+	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub)
 	if err != nil {
 		fmt.Println(err)
-		// can't proceed without a proper public key
 		fmt.Printf("miner needs a valid public key")
 		return
 	}
-	priv, _ := pem.Decode([]byte(args[2]))
-	parsedPrivateKey, err := x509.ParsePKCS1PrivateKey(priv.Bytes)
+	priv, _ := hex.DecodeString(args[2])
+	parsedPrivateKey, err := x509.ParseECPrivateKey(priv)
 	if err != nil {
-		// can't proceed without a proper private key
 		fmt.Println(err)
 		fmt.Printf("miner needs a valid private key")
-		return
 	}
-
-	publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	publicKey = *parsedPublicKey.(*ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
-	*/
-
-	keyPointer, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	if err != nil {
-		panic(err)
-	}
-	privKey := *keyPointer
-	publicKey = privKey.PublicKey
-	privateKey = privKey
 
 	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
