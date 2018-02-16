@@ -88,7 +88,6 @@ func main() {
 		time.Sleep(1000 * time.Millisecond)
 	}
 
-
 	// shapeHash, _, inkRemaining, err := canvas.AddShape(2, blockartlib.PATH, "M 0 0 H 5 V 5 h -5 Z", "red", "blue")
 	// fmt.Println("ADD SHAPE DONE:")
 	// fmt.Println(err)
@@ -98,7 +97,16 @@ func main() {
 	// fmt.Println(err)
 	// fmt.Println(inkRemaining)
 
-	canvas.AddShape(1, blockartlib.PATH, "M 0 0 H 5 V 5 h -5 Z", "red", "blue")
-	canvas.AddShape(1, blockartlib.PATH, "M 5 5 H 5 V 5 h -5 Z", "green", "blue")
-	canvas.AddShape(1, blockartlib.PATH, "M 10 10 H 5 V 5 h -5 Z", "yellow", "blue")
+	shapeHash, _, inkRemaining, err := canvas.AddShape(1, blockartlib.PATH, "M 0 0 H 5 V 5 h -5 Z", "red", "blue")
+	fmt.Println(shapeHash)
+	fmt.Println(inkRemaining)
+	fmt.Println(err)
+	shapeHash, _, inkRemaining, err = canvas.AddShape(1, blockartlib.PATH, "M 5 5 h 10 v 10 h -5 Z", "green", "blue")
+	fmt.Println(shapeHash)
+	fmt.Println(inkRemaining)
+	fmt.Println(err)
+	shapeHash, _, inkRemaining, err = canvas.AddShape(1, blockartlib.PATH, "M 10 10 h 5 v 5 h -5 Z", "yellow", "blue")
+	fmt.Println(shapeHash)
+	fmt.Println(inkRemaining)
+	fmt.Println(err)
 }
