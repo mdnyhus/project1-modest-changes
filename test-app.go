@@ -95,5 +95,5 @@ func main() {
 	inkRemaining, err = canvas.DeleteShape(2, shapeHash)
 	fmt.Println("DELETE SHAPE DONE:")
 	fmt.Println(err)
-	fmt.Println(inkRemaining)	
+	fmt.Println(inkRemaining)
 }

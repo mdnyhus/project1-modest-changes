@@ -3,6 +3,7 @@ package blockartlib
 import (
 	"crypto/ecdsa"
 	"crypto/md5"
+	"encoding/gob"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"encoding/gob"
 )
 
 type CanvasInstance struct {

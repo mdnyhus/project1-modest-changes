@@ -1406,7 +1406,6 @@ func startHeartBeat() error {
 		// passing the miners public key and a dummy reply
 		clientErr := serverConn.Call("RServer.HeartBeat", publicKey, &reply)
 		if clientErr != nil {
-			// TODO ->
 			fmt.Println(clientErr)
 			return clientErr
 		}
@@ -1649,7 +1648,7 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", getOutboundIP() + ":0")
+	l, e := net.Listen("tcp", getOutboundIP()+":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return

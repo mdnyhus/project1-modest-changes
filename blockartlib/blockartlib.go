@@ -268,7 +268,7 @@ func OpenCanvas(minerAddr string, privKey ecdsa.PrivateKey) (canvas Canvas, sett
 	return canvasT, setting, nil
 }
 
-// REnders the canvas in HTML.
+// Renders the canvas in HTML.
 func PaintCanvas() {
 	htmlContent := []byte("hello\ngo\n")
 	current, _ := os.Getwd()
