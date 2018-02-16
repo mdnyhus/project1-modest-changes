@@ -1494,6 +1494,10 @@ func main() {
 	}
 	priv, _ := hex.DecodeString(args[2])
 	parsedPrivateKey, err := x509.ParseECPrivateKey(priv)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Printf("miner needs a valid private key")
+	}
 	publicKey = *parsedPublicKey.(*ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
 
