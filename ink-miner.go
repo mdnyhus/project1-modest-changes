@@ -30,8 +30,8 @@ import (
 	"sync"
 	"time"
 	"encoding/hex"
-	"crypto/x509"
-	"encoding/pem"
+	//"crypto/x509"
+	//"encoding/pem"
 )
 
 // Static
@@ -1338,11 +1338,17 @@ func mine() {
 	// certainly changed
 	nonceTry := 0
 
+	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
+	if err != nil {
+		// Only occurs on startup. Panic to prevent miner from running in bad state.
+		panic(err)
+	}
+	currBlock = &Block{prev: blockartlib.Hash(genesisHash), len: 1}
+
 	// should be trying to mine constantly
 	for {
 		// acquire lock
 		blockLock.Lock()
-
 		for i := 0; i < numTries; i++ {
 			currBlock.nonce = strconv.Itoa(nonceTry)
 			nonceTry++
@@ -1390,7 +1396,8 @@ func main() {
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 3
+	//numArgs := 3
+	numArgs := 1
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1405,9 +1412,9 @@ func main() {
 
 	outgoingAddress = args[0]
 
-	// TODO: Uncomment the below:
-
 	//TODO: verify if this parse is this correct?
+
+	/*
 	pub, _ := pem.Decode([]byte(args[1]))
 	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub.Bytes)
 	if err != nil {
@@ -1427,11 +1434,12 @@ func main() {
 
 	publicKey = parsedPublicKey.(ecdsa.PublicKey)
 	privateKey = *parsedPrivateKey
+	*/
 
-	//keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	//privKey := *keyPointer
-	//publicKey = privKey.PublicKey
-	//privateKey = privKey
+	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	privKey := *keyPointer
+	publicKey = privKey.PublicKey
+	privateKey = privKey
 
 	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
