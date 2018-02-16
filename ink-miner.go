@@ -1284,7 +1284,7 @@ func registerMinerToServer() error {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		fmt.Println(clientErr)
 		return ServerConnectionError("registration failure ")
@@ -1298,15 +1298,18 @@ func registerMinerToServer() error {
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
-	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
+	frequency := time.Duration(minerNetSettings.HeartBeat / 2) * time.Millisecond
+	for range time.Tick(frequency) {
 		var reply bool
 		// passing the miners public key and a dummy reply
-		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
+		clientErr := serverConn.Call("RServer.HeartBeat", publicKey, &reply)
 		if clientErr != nil {
-			//TODO: what do we want to do if the rpc call fails
-			return ServerConnectionError("heartbeat failure")
+			// TODO ->
+			fmt.Println(clientErr)
+			return clientErr
 		}
 	}
+
 	return nil
 }
 
@@ -1418,7 +1421,6 @@ func mine() {
 	for {
 		// acquire lock
 		blockLock.Lock()
-
 		for i := 0; i < numTries; i++ {
 			currBlock.nonce = strconv.Itoa(nonceTry)
 			nonceTry++
@@ -1455,9 +1457,10 @@ func mine() {
 				break
 			}
 		}
-
 		// give up lock
 		blockLock.Unlock()
+
+		//TODO breaks heartbeat
 	}
 }
 
@@ -1540,6 +1543,14 @@ func main() {
 	go startHeartBeat()
 
 	go requestForMoreNodesRoutine()
+
+	//Initializing the first block
+	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
+	if err != nil {
+		// Only occurs on startup. Panic to prevent miner from running in bad state.
+		panic(err)
+	}
+	currBlock = &Block{prev: blockartlib.Hash(genesisHash), len: 1}
 
 	go mine()
 
