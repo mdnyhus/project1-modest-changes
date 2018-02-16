@@ -1227,7 +1227,7 @@ func registerMinerToServer() error {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		fmt.Println(clientErr)
 		return ServerConnectionError("registration failure ")
@@ -1241,15 +1241,23 @@ func registerMinerToServer() error {
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
-	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
+	//prevCheck := time.Now()
+	frequency := time.Duration(minerNetSettings.HeartBeat / 2) * time.Millisecond
+	fmt.Println(frequency)
+	last := 0
+	for {
+		fmt.Println("hearbeat")
 		var reply bool
 		// passing the miners public key and a dummy reply
-		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
-		if clientErr != nil {
-			//TODO: what do we want to do if the rpc call fails
-			return ServerConnectionError("heartbeat failure")
-		}
+		go serverConn.Call("RServer.HeartBeat", publicKey, &reply)
+
+		fmt.Println("Succuessful heartbeat message")
+		//prevCheck = time.Now()
+		//time.Sleep(frequency)
+		last++
+		fmt.Print(last)
 	}
+
 	return nil
 }
 
@@ -1337,13 +1345,6 @@ func mine() {
 	// roll over, but that's ok; by then, the curBlock will have almost
 	// certainly changed
 	nonceTry := 0
-
-	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
-	if err != nil {
-		// Only occurs on startup. Panic to prevent miner from running in bad state.
-		panic(err)
-	}
-	currBlock = &Block{prev: blockartlib.Hash(genesisHash), len: 1}
 
 	// should be trying to mine constantly
 	for {
@@ -1436,7 +1437,10 @@ func main() {
 	privateKey = *parsedPrivateKey
 	*/
 
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	keyPointer, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
 	privKey := *keyPointer
 	publicKey = privKey.PublicKey
 	privateKey = privKey
@@ -1480,6 +1484,14 @@ func main() {
 	go startHeartBeat()
 
 	go requestForMoreNodesRoutine()
+
+	//Initializing the first block
+	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
+	if err != nil {
+		// Only occurs on startup. Panic to prevent miner from running in bad state.
+		panic(err)
+	}
+	currBlock = &Block{prev: blockartlib.Hash(genesisHash), len: 1}
 
 	go mine()
 
