@@ -19,6 +19,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -29,7 +30,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"encoding/hex"
+	//"crypto/x509"
+	//"encoding/pem"
+	"crypto/x509"
 )
 
 // Static
@@ -49,7 +52,7 @@ var neighbours = make(map[net.Addr]InkMiner)
 var neighboursLock = &sync.Mutex{}
 
 // Network
-var blockTree map[string]*BlockMeta
+var blockTree = make(map[string]*BlockMeta)
 var serverConn *rpc.Client
 var outgoingAddress string
 var incomingAddress string
@@ -60,9 +63,6 @@ var minerNetSettings *rpcCommunication.MinerNetSettings
 // slice of operation threads' channels that need to know about new blocks
 var opChans = make(map[string](chan *BlockMeta))
 var opChansLock = &sync.Mutex{}
-
-// FIXME
-var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
 type OpMeta struct {
 	hash blockartlib.Hash
@@ -94,7 +94,7 @@ type Block struct {
 	nonce string
 }
 
-func (b Block) String() string {
+func (b Block) ToString() string {
 	return fmt.Sprintf("%+v", b)
 }
 
@@ -181,25 +181,26 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	*reply = true
 	headBlockLock.Lock()
 	defer headBlockLock.Unlock()
-
 	if blockMeta.block.len > headBlockMeta.block.len {
 		// head block is about to change; need to update currBlock
 		blockLock.Lock()
-		newOps := []OpMeta{}
+		oldOps := currBlock.ops
+		currBlock.ops = []OpMeta{}
 		verificationChan := make(chan error, 1)
-		for _, oldOp := range currBlock.ops {
+		for _, oldOp := range oldOps {
 			// go through ops sequentially for simplicity
 			// TODO - if runtime is really bad, could make it parallel
-			go verifyOp(oldOp, blockMeta, verificationChan)
+			// FIXME
+			pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
+			go verifyOp(oldOp, &pseudoCurrBlockMeta, -1, verificationChan)
 			err := <-verificationChan
 			if err == nil {
-				// op is still valid (wasn't added in a previous block)
-				newOps = append(newOps, oldOp)
+				// op is still valid
+				currBlock.ops = append(currBlock.ops, oldOp)
 			}
 		}
 		close(verificationChan)
 
-		currBlock.ops = newOps
 		currBlock.prev = blockMeta.hash
 		blockLock.Unlock()
 
@@ -216,6 +217,27 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 
 	floodBlock(*blockMeta)
 
+	return nil
+}
+
+// Called when miner has been given this miner as a neighbour, to notify this miner
+// of its new neighbour.
+// @param addr *net.Addr: address of calling miner.
+// @param reply *bool: Bool indicating success of RPC.
+// @return error: Any errors produced during new block processing.
+func (m *MinMin) NotifyNewNeighbour(addr *net.Addr, reply *bool) error {
+	inkMiner := addNeighbour(*addr)
+	*reply = false
+	if inkMiner != nil {
+		*reply = true
+		// send new neighbour this miner's headBlockMeta
+		go inkMiner.conn.Call("MinMin.NotifyNewBlock", headBlockMeta, nil)
+
+		// send currently pending ops
+		for _, opMeta := range currBlock.ops {
+			go inkMiner.conn.Call("MinMin.NotifyNewOp", &opMeta, nil)
+		}
+	}
 	return nil
 }
 
@@ -341,7 +363,7 @@ func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error)
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
-	*reply = inkAvail(args.Miner, currBlock)
+	*reply = inkAvailCurr()
 	return nil
 }
 
@@ -754,7 +776,7 @@ func isGenesis(blockMeta BlockMeta) bool {
 // @return Hash: The hash of the block.
 func hashBlock(block Block) blockartlib.Hash {
 	hasher := md5.New()
-	hasher.Write([]byte(block.String()))
+	hasher.Write([]byte(block.ToString()))
 	return blockartlib.Hash(hasher.Sum(nil)[:])
 }
 
@@ -793,21 +815,10 @@ func verifyBlockNonce(hash string) error {
 // @return error: nil iff valid.
 func verifyOps(block Block) error {
 	verificationChan := make(chan error, 1)
-	for i, opMeta := range block.ops {
-		op := opMeta.op
-		if err := validateShape(op.shapeMeta); err != nil {
-			return err
-		}
 
-		// Ensure op does not conflict with previous ops.
-		for j := 0; j < i; j++ {
-			if jOp := block.ops[j].op; op.owner != jOp.owner {
-				if blockartlib.ShapesIntersect(op.shapeMeta.Shape, jOp.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
-					return blockartlib.ShapeOverlapError(string(op.shapeMeta.Hash))
-				}
-			}
-		}
-		go verifyOp(opMeta, blockTree[block.prev.String()], verificationChan)
+	pseudoBlockMeta := BlockMeta{block: block}
+	for i, opMeta := range block.ops {
+		go verifyOp(opMeta, &pseudoBlockMeta, i, verificationChan)
 	}
 
 	pendingVerifications := len(block.ops)
@@ -821,16 +832,15 @@ func verifyOps(block Block) error {
 	return nil
 }
 
-// Verifies an op against all previous ops in the blockchain. Assumes all previous blocks in chain are valid.
-// LOCKS: Acquires headBlockLock.
+// Verifies an op against all ops in the blockchain starting at blockMeta. Assumes all previous blocks in
+// chain are valid. Skip the operation itself for validation.
+// ASSUME: any blocks required for blockMeta have already been acquired
 // @param candidateOp Op: The op to verify.
-// @param block *Block: The headBlock on which to begin the verification.
+// @param blockMeta *Block: The starting blockMeta on which to begin the verification.
+//							Note: this does not need to be a fully valid block; it can also be a pseudo block meta
+//                                created around currBlock
 // @param ch chan<-error: The channel to which verification errors are piped into, or nil if no errors are found.
-// FIXME: Must work with currBlock which is not a BlockMeta.
-func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
-	headBlockLock.Lock()
-	defer headBlockLock.Unlock()
-
+func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch chan<- error) {
 	// Verify hash.
 	if hashOp(candidateOpMeta.op).String() != candidateOpMeta.hash.String() {
 		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.String())
@@ -862,7 +872,11 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 
 		// Ensure miner has enough ink.
 		ink, err := blockartlib.InkUsed(&shape)
-		inkAvail := inkAvail(candidateOp.owner, &headBlockMeta.block)
+		inkAvail := inkAvail(candidateOp.owner, blockMeta)
+		if indexInBlock >= 0 {
+			// op is in the block, so don't double count the ink it uses
+			inkAvail -= ink
+		}
 		if err != nil || inkAvail < ink {
 			ch <- blockartlib.InsufficientInkError(inkAvail)
 			return
@@ -871,7 +885,14 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 		// Ensure op is not duplicate and shape does not overlap with other ops in the chain.
 		curr := blockMeta
 		for {
-			for _, opMeta := range curr.block.ops {
+			for i, opMeta := range curr.block.ops {
+				// test if curr == blockMeta
+				// aren't guaranteed blockMeta is a valid meta, just use block
+				if curr.block.prev.String() == blockMeta.block.prev.String() && i == indexInBlock {
+					// this is the op itself in the block; skip it
+					continue
+				}
+
 				// This op has been performed before.
 				if candidateOpMeta.hash.String() == opMeta.hash.String() {
 					// TODO: More specific error?
@@ -998,9 +1019,8 @@ func receiveNewOp(opMeta OpMeta) (err error) {
 
 	// check if op is valid
 	verifyCh := make(chan error, 1)
-	// FIXME: verifyOp needs to be fixed. 2nd arg should be currBlock!!!
-	deleteMePleaseCurrBlockMeta := BlockMeta{block: *currBlock}
-	verifyOp(opMeta, &deleteMePleaseCurrBlockMeta, verifyCh)
+	pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
+	go verifyOp(opMeta, &pseudoCurrBlockMeta, -1, verifyCh)
 
 	err = <-verifyCh
 	if err != nil {
@@ -1199,15 +1219,55 @@ func searchSlice(search string, slice []string) (index int) {
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
 // @param owner ecdsa.PublicKey: public key identfying miner
 // @param headBlock *Block: head block of chain from which ink will be calculated
-// @return ink uint32: ink currently available to this miner, in pixels
-func inkAvail(miner ecdsa.PublicKey, headBlock *Block) (ink uint32) {
+// @return ink uint32: ink currently available to the miner, in pixels
+func inkAvail(miner ecdsa.PublicKey, headBlock *BlockMeta) (ink uint32) {
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
 	args := &inkAvailCrawlArgs{miner: miner}
 	var reply inkAvailCrawlReply
 
-	// FIXME: crawlChain operates on published chain, not unpublished currBlock.
-	deleteMeHeadBlockMeta := BlockMeta{block: *headBlock}
-	if err := crawlChain(&deleteMeHeadBlockMeta, inkAvailCrawlHelper, args, &reply); err != nil {
+	if err := crawlChain(headBlock, inkAvailCrawlHelper, args, &reply); err != nil {
+		// error while searching; just return 0
+		return 0
+	}
+
+	return reply.ink
+}
+
+// Counts the amount of ink currently available to this miner starting at currBlock
+// @return ink uint32: ink currently available to this miner, in pixels
+func inkAvailCurr() (ink uint32) {
+	// the crawl by default does all the work we need, so no special helper/args/reply is required
+	args := &inkAvailCrawlArgs{miner: publicKey}
+	var reply inkAvailCrawlReply
+
+	// first count up the amount of ink used in currBlock
+	// look only for delete operations
+	for _, opMeta := range currBlock.ops {
+		op := opMeta.op
+		if op.deleteShapeHash != "" && op.owner == publicKey {
+			// shape was removed and owned by this miner
+			reply.removedShapeHashes = append(reply.removedShapeHashes, op.deleteShapeHash)
+		}
+	}
+	// look only for added operations
+	for _, opMeta := range currBlock.ops {
+		op := opMeta.op
+		if op.shapeMeta != nil && op.owner == publicKey {
+			// shape was added and owned by this miner
+			index := searchSlice(op.shapeMeta.Hash, reply.removedShapeHashes)
+			if index >= 0 && index < len(reply.removedShapeHashes) {
+				// shape was later removed; do not charge for ink
+				// remove deleteShapeHash from the list of removedShapeHashes
+				reply.removedShapeHashes = append(reply.removedShapeHashes[:index], reply.removedShapeHashes[index+1:]...)
+			} else {
+				// shape was not removed
+				reply.ink -= op.shapeMeta.Shape.Ink
+			}
+		}
+	}
+
+	// second, go through the rest of the chain
+	if err := crawlChain(headBlockMeta, inkAvailCrawlHelper, args, &reply); err != nil {
 		// error while searching; just return 0
 		return 0
 	}
@@ -1225,7 +1285,7 @@ func registerMinerToServer() error {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		fmt.Println(clientErr)
 		return ServerConnectionError("registration failure ")
@@ -1239,15 +1299,20 @@ func registerMinerToServer() error {
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
-	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
+	frequency := time.Duration(minerNetSettings.HeartBeat/4) * time.Millisecond
+	for {
 		var reply bool
 		// passing the miners public key and a dummy reply
-		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
+		clientErr := serverConn.Call("RServer.HeartBeat", publicKey, &reply)
 		if clientErr != nil {
-			//TODO: what do we want to do if the rpc call fails
-			return ServerConnectionError("heartbeat failure")
+			// TODO ->
+			fmt.Println(clientErr)
+			return clientErr
 		}
+
+		time.Sleep(frequency)
 	}
+
 	return nil
 }
 
@@ -1265,22 +1330,41 @@ func getNodes() error {
 
 	neighboursLock.Lock()
 	for _, address := range newNeighbourAddresses {
-		// only add it if the neighbor does not already exist
-		if !doesNeighbourExist(address) {
-			client, err := rpc.Dial(address.Network(), address.String())
-			if err != nil {
-				// if we can not connect to a node, just try the next outgoingAddress
-				continue
-			} else {
-				inkMiner := InkMiner{}
-				inkMiner.conn = client
-				inkMiner.address = address
-				neighbours[address] = inkMiner
+		if inkMiner := addNeighbour(address); inkMiner != nil {
+			// notify new neighbours that you are their neighbour
+			var reply bool
+			inkMiner.conn.Call("MinMin.NotifyNewNeighbour", &address, &reply)
+			if !reply {
+				// remove neighbour from map
+				delete(neighbours, address)
 			}
 		}
 	}
-
 	neighboursLock.Unlock()
+	return nil
+}
+
+/*
+	Tries to add neighbour to local slice of neighbours
+	NOTE: requires neighboursLock to be acquired before calling this function
+	@param: outgoing address of the new neighbour
+	@return: InkMiner of added neighbour, nil if neighbour was not added
+*/
+func addNeighbour(address net.Addr) *InkMiner {
+	// only add it if the neighbor does not already exist
+	if !doesNeighbourExist(address) {
+		client, err := rpc.Dial(address.Network(), address.String())
+		if err != nil {
+			// can not connect to a node
+			return nil
+		}
+
+		inkMiner := InkMiner{conn: client, address: address}
+		neighbours[address] = inkMiner
+
+		return &inkMiner
+	}
+
 	return nil
 }
 
@@ -1328,7 +1412,7 @@ func requestForMoreNodesRoutine() error {
 */
 func mine() {
 	// number of nonces to try before giving up lock
-	numTries := 1000
+	numTries := 100
 
 	// so that we don't check the same nonce again and again,
 	// keep a value that is always incremented. It will (eventually)
@@ -1340,7 +1424,6 @@ func mine() {
 	for {
 		// acquire lock
 		blockLock.Lock()
-
 		for i := 0; i < numTries; i++ {
 			currBlock.nonce = strconv.Itoa(nonceTry)
 			nonceTry++
@@ -1377,18 +1460,22 @@ func mine() {
 				break
 			}
 		}
-
 		// give up lock
 		blockLock.Unlock()
+
+		time.Sleep(time.Second)
+
+		//TODO breaks heartbeat
 	}
 }
 
+// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`"
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 1
+	numArgs := 3
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1403,30 +1490,25 @@ func main() {
 
 	outgoingAddress = args[0]
 
-	// TODO: Uncomment the below:
-
-	//TODO: verify if this parse is this correct?
-	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
-	//if err != nil {
-	//	// can't proceed without a proper public key
-	//	fmt.Printf("miner needs a valid public key")
-	//	return
-	//}
-	//
-	//parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
-	//if err != nil {
-	//	// can't proceed without a proper private key
-	//	fmt.Printf("miner needs a valid private key")
-	//	return
-	//}
-	//
-	//publicKey = parsedPublicKey.(ecdsa.PublicKey)
-	//privateKey = *parsedPrivateKey
-
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	privKey := *keyPointer
-	publicKey = privKey.PublicKey
-	privateKey = privKey
+	pub, err := hex.DecodeString(args[1])
+	if err != nil {
+		fmt.Println(args[1])
+		panic(err)
+	}
+	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Printf("miner needs a valid public key")
+		return
+	}
+	priv, _ := hex.DecodeString(args[2])
+	parsedPrivateKey, err := x509.ParseECPrivateKey(priv)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Printf("miner needs a valid private key")
+	}
+	publicKey = *parsedPublicKey.(*ecdsa.PublicKey)
+	privateKey = *parsedPrivateKey
 
 	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
@@ -1439,7 +1521,7 @@ func main() {
 	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {
 		// can't proceed without a connection to the server
-		fmt.Printf("miner can not dial to the server")
+		fmt.Printf("miner cannot dial to the server")
 		return
 	}
 	serverConn = client
@@ -1449,8 +1531,7 @@ func main() {
 	libMin := new(LibMin)
 	server.Register(libMin)
 	// need automatic port generation
-	ip := strings.Split(outgoingAddress, ":")
-	l, e := net.Listen("tcp", ip[0]+":0")
+	l, e := net.Listen("tcp", ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
@@ -1459,10 +1540,24 @@ func main() {
 	incomingAddress = l.Addr().String()
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
-		// can not proceed if it is not register to the server
-		fmt.Printf("miner can not register itself to the server")
+		// cannot proceed if it is not register to the server
+		fmt.Printf("miner cannot register itself to the server")
 		return
 	}
+
+	//Initializing the first block
+	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
+	if err != nil {
+		// Only occurs on startup. Panic to prevent miner from running in bad state.
+		panic(err)
+	}
+	hash := blockartlib.Hash(genesisHash)
+	currBlock = &Block{prev: hash, len: 1}
+
+	// create genesis block
+	genesisBlockMeta := &BlockMeta{hash: hash}
+	blockTree[hash.String()] = genesisBlockMeta
+	headBlockMeta = genesisBlockMeta
 
 	go startHeartBeat()
 
