@@ -12,9 +12,8 @@ package main
 // this art-app.go file
 import (
 	"./blockartlib"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
+	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"os"
 )
@@ -103,14 +102,25 @@ func buildTreeHelper(todo []PC) {
 }
 
 func main() {
-	// TODO - make it take arguments
-	minerAddr := "127.0.0.1:8080"
-	//privKey := // TODO: use crypto/ecdsa to read pub/priv keys from a file argument.
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	privKey := *keyPointer
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: go run html-app.go [minerAddr ip:port] [privKey]")
+		os.Exit(1)
+	}
+
+	minerAddr := os.Args[1]
+	privKeyArg := os.Args[2]
+
+	privKeyStr, err := hex.DecodeString(privKeyArg)
+	if err != nil {
+		panic(err)
+	}
+	privKeyParsed, err := x509.ParseECPrivateKey(privKeyStr)
+	if err != nil {
+		panic(err)
+	}
+	privKey := *privKeyParsed
 
 	// Open a canvas.
-	var err error
 	canvas, settings, err = blockartlib.OpenCanvas(minerAddr, privKey)
 	if checkError(err) != nil {
 		return
@@ -123,6 +133,7 @@ func main() {
 	}
 
 	buildTree()
+
 	// find longest chain
 	maxHeight := -1
 	var head *bTNode
@@ -167,7 +178,7 @@ func main() {
 
 	// write html file
 	file, _ := os.OpenFile("./html-app.html", os.O_RDWR|os.O_CREATE, 0666)
-	file.Write([]byte("<svg>\n"))
+	file.Write([]byte(fmt.Sprintf("<svg style=\"height: %dpx; width: %dpx\">\n", settings.CanvasXMax, settings.CanvasYMax)))
 
 	for i := 0; i < len(svgStrings); i++ {
 		fmt.Println(svgStrings[i])

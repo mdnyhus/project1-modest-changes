@@ -46,10 +46,6 @@ type OpenCanvasReply struct {
 	CanvasSettings CanvasSettings
 }
 
-type GetInkArgs struct {
-	Miner ecdsa.PublicKey
-}
-
 type DeleteShapeArgs struct {
 	ValidateNum uint8
 	ShapeHash   string
