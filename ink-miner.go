@@ -345,6 +345,17 @@ func (l *LibMin) AddShapeIM(args *blockartlib.AddShapeArgs, reply *blockartlib.A
 	}
 
 	reply.OpHash = hash.ToString()
+
+	// find block where this was added
+	_, blockMeta := findOpMeta(hash.ToString())
+	if blockMeta == nil {
+		// should never happen; just return an error
+		reply.Error = blockartlib.DisconnectedError("")
+		return nil
+	}
+
+	reply.BlockHash = blockMeta.hash.ToString()
+
 	// Get ink
 	var inkArgs int
 	return l.GetInkIM(inkArgs, &reply.InkRemaining)
@@ -361,7 +372,7 @@ func (l *LibMin) GetSvgStringIM(args *blockartlib.GetSvgStringArgs, reply *block
 	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 	// do not search externally; assume that any external blocks will get
 	// flooded to this miner soon.
-	opMeta := findOpMeta(args.OpHash)
+	opMeta, _ := findOpMeta(args.OpHash)
 	if opMeta == nil {
 		// shape does not exist, return InvalidShapeHashError
 		reply.Error = blockartlib.InvalidShapeHashError(args.OpHash)
@@ -485,10 +496,7 @@ func (l *LibMin) GetShapesIM(args *string, reply *blockartlib.GetShapesReply) (e
 
 	for _, opMeta := range blockMeta.block.ops {
 		// add op's hash to reply.ShapeHashes
-		hash := opMeta.op.deleteShapeHash
-		if opMeta.op.shapeMeta != nil {
-			hash = opMeta.op.shapeMeta.Hash
-		}
+		hash := opMeta.hash.ToString()
 		reply.ShapeHashes = append(reply.ShapeHashes, hash)
 	}
 
@@ -637,7 +645,7 @@ func blocksEqual(block1 Block, block2 Block) bool {
 // Searches for an opMeta in the set of local blocks with the given hash.
 // @param opHash string: hash of opMeta that is being searched for
 // @return shape: found op whose hash matches opHash; nil if it does not exist
-func findOpMeta(opHash string) (opMeta *OpMeta) {
+func findOpMeta(opHash string) (*OpMeta, *BlockMeta) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
 	for _, blockMeta := range blockTree {
 		block := blockMeta.block
@@ -645,13 +653,13 @@ func findOpMeta(opHash string) (opMeta *OpMeta) {
 		for _, opMeta := range block.ops {
 			if opMeta.hash.ToString() == opHash {
 				// opMeta was found
-				return &opMeta
+				return &opMeta, blockMeta
 			}
 		}
 	}
 
 	// opMeta was not found
-	return nil
+	return nil, nil
 }
 
 // Searches for a shapeMeta with the given hash in the set of add ops in local blocks.
