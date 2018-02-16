@@ -163,14 +163,18 @@ func main() {
 	for _, node := range chain {
 		shapeHashes, err := canvas.GetShapes(node.hash)
 		if checkError(err) != nil {
+			fmt.Println("a")
 			return
 		}
 
 		for _, shapeHash := range shapeHashes {
 			svgString, err := canvas.GetSvgString(shapeHash)
 			if checkError(err) != nil {
+				fmt.Println("b")
 				return
 			}
+
+			fmt.Println(svgString)
 
 			svgStrings = append(svgStrings, svgString)
 		}
@@ -188,4 +192,6 @@ func main() {
 	file.Write([]byte("<svg/>"))
 	file.Sync()
 	file.Close()
+
+	fmt.Println("done")
 }
