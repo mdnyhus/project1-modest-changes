@@ -13,15 +13,24 @@ class Canvas extends Component {
     }
 
     render() {
-        var width = this.props.canvas? this.props.canvas.width : 0; 
-        var height = this.props.canvas? this.props.canvas.height : 0;
-        var shapes = this.props.canvas? this.props.canvas.shapes : [];
+        
+        var width = this.props.canvas.width;
+        var height = this.props.canvas.height;
+        var htmlShapes
+        if (this.props.canvas.shapeHistory.length !== 0){
+            var shapeHistory = this.props.canvas.shapeHistory;
+            var currentVersion = shapeHistory.length - 1;
+            var shapes = shapeHistory[currentVersion]
+            htmlShapes = shapes.map((shape, index) =>
+                <div key={index} dangerouslySetInnerHTML={{__html: shape}}/>
+            );
+        }
         return (
             <div>
-                <div style={{width: width, height: height}} className="canvas">
+                <div id="canvas" style={{width: width, height: height}} className="canvas">
+                    {htmlShapes}
                 </div>
-                <button onClick={() => this.props.renderCanvas(shapes)}>Render</button>
-                <code>{this.props.canvas? this.props.canvas.shapes : []}</code>
+                <button onClick={() => this.props.renderCanvas(['<svg height="210" width="400"><path d="M150 0 L75 200 L225 200 Z" /></svg>','<svg height="210" width="400"><path d="M250 0 L75 200 L225 200 Z" /></svg>'])}>Render</button>
             </div>
         );
     }
