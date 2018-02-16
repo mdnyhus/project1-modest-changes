@@ -19,6 +19,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -29,7 +30,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"encoding/hex"
 )
 
 // Static
@@ -60,9 +60,6 @@ var minerNetSettings *rpcCommunication.MinerNetSettings
 // slice of operation threads' channels that need to know about new blocks
 var opChans = make(map[string](chan *BlockMeta))
 var opChansLock = &sync.Mutex{}
-
-// FIXME
-var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
 type OpMeta struct {
 	hash blockartlib.Hash
@@ -185,21 +182,23 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	if blockMeta.block.len > headBlockMeta.block.len {
 		// head block is about to change; need to update currBlock
 		blockLock.Lock()
-		newOps := []OpMeta{}
+		oldOps := currBlock.ops
+		currBlock.ops = []OpMeta{}
 		verificationChan := make(chan error, 1)
-		for _, oldOp := range currBlock.ops {
+		for _, oldOp := range oldOps {
 			// go through ops sequentially for simplicity
 			// TODO - if runtime is really bad, could make it parallel
-			go verifyOp(oldOp, blockMeta, verificationChan)
+			// FIXME
+			pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
+			go verifyOp(oldOp, &pseudoCurrBlockMeta, -1, verificationChan)
 			err := <-verificationChan
 			if err == nil {
-				// op is still valid (wasn't added in a previous block)
-				newOps = append(newOps, oldOp)
+				// op is still valid
+				currBlock.ops = append(currBlock.ops, oldOp)
 			}
 		}
 		close(verificationChan)
 
-		currBlock.ops = newOps
 		currBlock.prev = blockMeta.hash
 		blockLock.Unlock()
 
@@ -341,7 +340,7 @@ func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error)
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
-	*reply = inkAvail(args.Miner, currBlock)
+	*reply = inkAvailCurr()
 	return nil
 }
 
@@ -793,21 +792,10 @@ func verifyBlockNonce(hash string) error {
 // @return error: nil iff valid.
 func verifyOps(block Block) error {
 	verificationChan := make(chan error, 1)
-	for i, opMeta := range block.ops {
-		op := opMeta.op
-		if err := validateShape(op.shapeMeta); err != nil {
-			return err
-		}
 
-		// Ensure op does not conflict with previous ops.
-		for j := 0; j < i; j++ {
-			if jOp := block.ops[j].op; op.owner != jOp.owner {
-				if blockartlib.ShapesIntersect(op.shapeMeta.Shape, jOp.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
-					return blockartlib.ShapeOverlapError(string(op.shapeMeta.Hash))
-				}
-			}
-		}
-		go verifyOp(opMeta, blockTree[block.prev.String()], verificationChan)
+	pseudoBlockMeta := BlockMeta{block: block}
+	for i, opMeta := range block.ops {
+		go verifyOp(opMeta, &pseudoBlockMeta, i, verificationChan)
 	}
 
 	pendingVerifications := len(block.ops)
@@ -821,16 +809,15 @@ func verifyOps(block Block) error {
 	return nil
 }
 
-// Verifies an op against all previous ops in the blockchain. Assumes all previous blocks in chain are valid.
-// LOCKS: Acquires headBlockLock.
+// Verifies an op against all ops in the blockchain starting at blockMeta. Assumes all previous blocks in
+// chain are valid. Skip the operation itself for validation.
+// ASSUME: any blocks required for blockMeta have already been acquired
 // @param candidateOp Op: The op to verify.
-// @param block *Block: The headBlock on which to begin the verification.
+// @param blockMeta *Block: The starting blockMeta on which to begin the verification.
+//							Note: this does not need to be a fully valid block; it can also be a pseudo block meta
+//                                created around currBlock
 // @param ch chan<-error: The channel to which verification errors are piped into, or nil if no errors are found.
-// FIXME: Must work with currBlock which is not a BlockMeta.
-func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
-	headBlockLock.Lock()
-	defer headBlockLock.Unlock()
-
+func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch chan<- error) {
 	// Verify hash.
 	if hashOp(candidateOpMeta.op).String() != candidateOpMeta.hash.String() {
 		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.String())
@@ -862,7 +849,11 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 
 		// Ensure miner has enough ink.
 		ink, err := blockartlib.InkUsed(&shape)
-		inkAvail := inkAvail(candidateOp.owner, &headBlockMeta.block)
+		inkAvail := inkAvail(candidateOp.owner, blockMeta)
+		if indexInBlock >= 0 {
+			// op is in the block, so don't double count the ink it uses
+			inkAvail -= ink
+		}
 		if err != nil || inkAvail < ink {
 			ch <- blockartlib.InsufficientInkError(inkAvail)
 			return
@@ -871,7 +862,14 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 		// Ensure op is not duplicate and shape does not overlap with other ops in the chain.
 		curr := blockMeta
 		for {
-			for _, opMeta := range curr.block.ops {
+			for i, opMeta := range curr.block.ops {
+				// test if curr == blockMeta
+				// aren't guaranteed blockMeta is a valid meta, just use block
+				if curr.block.prev.String() == blockMeta.block.prev.String() && i == indexInBlock {
+					// this is the op itself in the block; skip it
+					continue
+				}
+
 				// This op has been performed before.
 				if candidateOpMeta.hash.String() == opMeta.hash.String() {
 					// TODO: More specific error?
@@ -998,9 +996,8 @@ func receiveNewOp(opMeta OpMeta) (err error) {
 
 	// check if op is valid
 	verifyCh := make(chan error, 1)
-	// FIXME: verifyOp needs to be fixed. 2nd arg should be currBlock!!!
-	deleteMePleaseCurrBlockMeta := BlockMeta{block: *currBlock}
-	verifyOp(opMeta, &deleteMePleaseCurrBlockMeta, verifyCh)
+	pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
+	go verifyOp(opMeta, &pseudoCurrBlockMeta, -1, verifyCh)
 
 	err = <-verifyCh
 	if err != nil {
@@ -1199,15 +1196,55 @@ func searchSlice(search string, slice []string) (index int) {
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
 // @param owner ecdsa.PublicKey: public key identfying miner
 // @param headBlock *Block: head block of chain from which ink will be calculated
-// @return ink uint32: ink currently available to this miner, in pixels
-func inkAvail(miner ecdsa.PublicKey, headBlock *Block) (ink uint32) {
+// @return ink uint32: ink currently available to the miner, in pixels
+func inkAvail(miner ecdsa.PublicKey, headBlock *BlockMeta) (ink uint32) {
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
 	args := &inkAvailCrawlArgs{miner: miner}
 	var reply inkAvailCrawlReply
 
-	// FIXME: crawlChain operates on published chain, not unpublished currBlock.
-	deleteMeHeadBlockMeta := BlockMeta{block: *headBlock}
-	if err := crawlChain(&deleteMeHeadBlockMeta, inkAvailCrawlHelper, args, &reply); err != nil {
+	if err := crawlChain(headBlock, inkAvailCrawlHelper, args, &reply); err != nil {
+		// error while searching; just return 0
+		return 0
+	}
+
+	return reply.ink
+}
+
+// Counts the amount of ink currently available to this miner starting at currBlock
+// @return ink uint32: ink currently available to this miner, in pixels
+func inkAvailCurr() (ink uint32) {
+	// the crawl by default does all the work we need, so no special helper/args/reply is required
+	args := &inkAvailCrawlArgs{miner: publicKey}
+	var reply inkAvailCrawlReply
+
+	// first count up the amount of ink used in currBlock
+	// look only for delete operations
+	for _, opMeta := range currBlock.ops {
+		op := opMeta.op
+		if op.deleteShapeHash != "" && op.owner == publicKey {
+			// shape was removed and owned by this miner
+			reply.removedShapeHashes = append(reply.removedShapeHashes, op.deleteShapeHash)
+		}
+	}
+	// look only for added operations
+	for _, opMeta := range currBlock.ops {
+		op := opMeta.op
+		if op.shapeMeta != nil && op.owner == publicKey {
+			// shape was added and owned by this miner
+			index := searchSlice(op.shapeMeta.Hash, reply.removedShapeHashes)
+			if index >= 0 && index < len(reply.removedShapeHashes) {
+				// shape was later removed; do not charge for ink
+				// remove deleteShapeHash from the list of removedShapeHashes
+				reply.removedShapeHashes = append(reply.removedShapeHashes[:index], reply.removedShapeHashes[index+1:]...)
+			} else {
+				// shape was not removed
+				reply.ink -= op.shapeMeta.Shape.Ink
+			}
+		}
+	}
+
+	// second, go through the rest of the chain
+	if err := crawlChain(headBlockMeta, inkAvailCrawlHelper, args, &reply); err != nil {
 		// error while searching; just return 0
 		return 0
 	}
