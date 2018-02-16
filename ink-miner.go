@@ -1574,13 +1574,14 @@ func main() {
 	libMin := new(LibMin)
 	server.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", ":0")
+	l, e := net.Listen("tcp", ":8080")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
 	}
 	go server.Accept(l)
 	incomingAddress = l.Addr().String()
+	fmt.Printf("Listening for blockartlib calls on address: %s\n", incomingAddress)
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
 		// cannot proceed if it is not register to the server
