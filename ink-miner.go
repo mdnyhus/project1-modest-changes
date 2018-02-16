@@ -321,8 +321,13 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 	resultErr := <-returnChan
 	if resultErr != nil {
 		reply.Error = err
+		return nil
 	}
-	return nil
+
+	reply.OpHash = hash.String()
+	// Get ink
+	getInkArgs := blockartlib.GetInkArgs{Miner: publicKey}
+	return l.GetInk(&getInkArgs, &reply.InkRemaining)
 }
 
 // Returns the full SvgString for the given hash, if it exists locally, and even if it was later deleted
@@ -336,16 +341,38 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 	// do not search externally; assume that any external blocks will get
 	// flooded to this miner soon.
-	shape := findShape(args.ShapeHash)
-	if shape != nil {
+	opMeta := findOpMeta(args.OpHash)
+	if opMeta == nil {
 		// shape does not exist, return InvalidShapeHashError
-		reply.Error = blockartlib.InvalidShapeHashError(args.ShapeHash)
+		reply.Error = blockartlib.InvalidShapeHashError(args.OpHash)
 		return nil
+	}
+
+	shapeMeta := opMeta.op.shapeMeta
+	var stroke, fill string
+	if shapeMeta != nil {
+		// this is an add op
+		stroke = shapeMeta.Shape.BorderColor
+		fill = shapeMeta.Shape.FillColor
+	}
+	if shapeMeta == nil {
+		// this is a delete op
+		// find the shape by hash
+		shapeMeta = findShapeMeta(opMeta.op.deleteShapeHash)
+		if shapeMeta == nil {
+			// shape does not exist, return InvalidShapeHashError
+			reply.Error = blockartlib.InvalidShapeHashError(args.OpHash)
+			return nil
+		}
+
+		// return a white shape, to delete the shape
+		stroke = "white"
+		fill = "white"
 	}
 
 	// Return html-valid tag, of the form:
 	// <path d=[svgString] stroke=[stroke] fill=[fill]/>
-	reply.SvgString = fmt.Sprintf("<path d=\"%s\" stroke=\"%s\" fill=\"%s\"/>", shape.Svg, shape.BorderColor, shape.FillColor)
+	reply.SvgString = fmt.Sprintf("<path d=\"%s\" stroke=\"%s\" fill=\"%s\"/>", shapeMeta.Shape.Svg, stroke, fill)
 	reply.Error = nil
 	return nil
 }
@@ -586,27 +613,44 @@ func blocksEqual(block1 Block, block2 Block) bool {
 	return true
 }
 
-// Searches for a shape in the set of local blocks with the given hash.
-// Note: this function does not care whether the shape was later deleted
-// @param deleteShapeHash string: hash of shape that is being searched for
-// @return shape *blockartlib.Shape: found shape whose hash matches deleteShapeHash; nil if it does not
-//                                   exist or was deleted
-func findShape(deleteShapeHash string) (shape *blockartlib.Shape) {
+// Searches for an opMeta in the set of local blocks with the given hash.
+// @param opHash string: hash of opMeta that is being searched for
+// @return shape: found op whose hash matches opHash; nil if it does not exist
+func findOpMeta(opHash string) (opMeta *OpMeta) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
 	for _, blockMeta := range blockTree {
 		block := blockMeta.block
-		// search through the block, searching for the add op for a shape with this hash
+		// search through the block's ops
 		for _, opMeta := range block.ops {
-			op := opMeta.op
-			if op.shapeMeta != nil && op.shapeMeta.Hash == deleteShapeHash {
-				// shape was found
-				return &op.shapeMeta.Shape
-				// keep searching through the block in case it is later deleted
+			if opMeta.hash.String() == opHash {
+				// opMeta was found
+				return &opMeta
 			}
 		}
 	}
 
-	// shape was not found
+	// opMeta was not found
+	return nil
+}
+
+// Searches for a shapeMeta with the given hash in the set of add ops in local blocks.
+// @param shapeHash string: hash of shapeMeta that is being searched for
+// @return shapeMeta: found shapeMeta whose hash matches shapeHash; nil if it does not
+//                    exist
+func findShapeMeta(shapeHash string) (shapeMeta *blockartlib.ShapeMeta) {
+	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	for _, blockMeta := range blockTree {
+		block := blockMeta.block
+		// search through the block's ops
+		for _, opMeta := range block.ops {
+			if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == shapeHash {
+				// shapeMeta was found
+				return opMeta.op.shapeMeta
+			}
+		}
+	}
+
+	// shapeMeta was not found
 	return nil
 }
 
