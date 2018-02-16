@@ -259,17 +259,17 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 	opChansLock.Lock()
 	opChan := make(chan *BlockMeta, 1)
 	opChans[opChansKey] = opChan
-	go opReceiveNewBlocks(opChan, returnChan, op, args.ValidateNum)
+	go opReceiveNewBlocks(opChan, returnChan, opMeta, args.ValidateNum)
 	opChansLock.Unlock()
 
-	defer func(opChan chan *Block, returnChan chan error, key string) {
+	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
 		// clean up channels
 		close(returnChan)
 		delete(opChans, key)
 		close(opChan)
 	}(opChan, returnChan, opChansKey)
 
-	// receiveNewOp will try to add op to current block and flood op
+	// receiveNewOp will try to add opMeta to current block and flood opMeta
 	if err = receiveNewOp(opMeta); err != nil {
 		// return error in reply so that it is not cast
 		reply.Error = err
@@ -358,10 +358,10 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 	opChansLock.Lock()
 	opChan := make(chan *BlockMeta, 1)
 	opChans[opChansKey] = opChan
-	go opReceiveNewBlocks(opChan, returnChan, op, args.ValidateNum)
+	go opReceiveNewBlocks(opChan, returnChan, opMeta, args.ValidateNum)
 	opChansLock.Unlock()
 
-	defer func(opChan chan *Block, returnChan chan error, key string) {
+	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
 		// clean up channels
 		close(returnChan)
 		delete(opChans, key)
@@ -369,7 +369,7 @@ func (l *LibMin) DeleteShape(args *blockartlib.DeleteShapeArgs, reply *blockartl
 	}(opChan, returnChan, opChansKey)
 
 	// receiveNewOp will try to add op to current block and flood op
-	if err = receiveNewOp(op); err != nil {
+	if err = receiveNewOp(opMeta); err != nil {
 		// return error in reply so that it is not cast
 		reply.Error = blockartlib.ShapeOwnerError(args.ShapeHash)
 		return nil
@@ -469,13 +469,13 @@ func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
 // is successfully added to the blockchain
 // @param opChan: channel through which new blocks will be sent
 // @param returnChan: channel through which the result of this function should be sent
-// @param op: the op we're trying to get added to the blockchain
-// @param validateNum: the number of blocks required after a block containing op in the blockchain
+// @param opMeta: the opMeta we're trying to get added to the blockchain
+// @param validateNum: the number of blocks required after a block containing opMeta in the blockchain
 //                     for the add to ba success
-func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, op Op, validateNum uint8) {
+func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta OpMeta, validateNum uint8) {
 	for {
 		blockMeta := <-opChan
-		// idea - see if op appears in the chain for this block
+		// idea - see if opMeta appears in the chain for this block
 		// if it does, check that validateNum number of blocks have been added on top
 		// if it is not, and this is the new head, resend the block
 		cur := blockMeta
@@ -485,10 +485,10 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, op Op, va
 	chainCrawl:
 		for !isGenesis(*cur) {
 			for _, opIter := range cur.block.ops {
-				if opIter == op {
-					// found the op in this chain
+				if opMetasEqual(opIter, opMeta) {
+					// found the opMeta in this chain
 					foundOp = true
-					if (blockMeta.len - cur.block.len) >= int(validateNum) {
+					if (blockMeta.block.len - cur.block.len) >= int(validateNum) {
 						// enough blocks have been added
 						returnChan <- nil
 						return
@@ -499,16 +499,16 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, op Op, va
 			}
 
 			var ok bool
-			if cur, ok = blockTree[cur.block.prev]; !ok {
+			if cur, ok = blockTree[cur.block.prev.String()]; !ok {
 				// chain should have been valid, this should never happen
 				// just ignore this block
 				break chainCrawl
 			}
 		}
 
-		if !foundOp && blockMetasEqual(*blockMeta, *headBlock) {
-			// op is not in the longest chain; resend the op and flood it
-			if err := receiveNewOp(op); err != nil {
+		if !foundOp && blockMetasEqual(*blockMeta, *headBlockMeta) {
+			// opMeta is not in the longest chain; resend the opMeta and flood it
+			if err := receiveNewOp(opMeta); err != nil {
 				// new longest chain now has a conflict with the
 				// return error in reply so that it is not cast
 				returnChan <- err
@@ -518,13 +518,20 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, op Op, va
 	}
 }
 
+// Compares two OpMetas, and returns true if they are equal
+// @param block1: the first OpMeta to compare
+// @param block2: the second OpMeta to compare
+// @return bool: true if the OpMetas are equal, false otherwise
+func opMetasEqual(opMeta1 OpMeta, opMeta2 OpMeta) bool {
+	return opMeta1.hash.String() == opMeta2.hash.String() && opMeta1.r.Cmp(&opMeta2.r) == 0 && opMeta1.s.Cmp(&opMeta2.s) == 0 && opMeta1.op == opMeta2.op
+}
+
 // Compares two blockMetas, and returns true if they are equal
-// For block.ops, the operations must be in the same order
 // @param block1: the first blockMeta to compare
 // @param block2: the second blockMeta to compare
 // @return bool: true if the blockMetas are equal, false otherwise
 func blockMetasEqual(blockMeta1 BlockMeta, blockMeta2 BlockMeta) bool {
-	if blockMeta1.hash != blockMeta2.hash || blockMeta1.r != blockMeta2.r || blockMeta1.s != blockMeta2.s {
+	if blockMeta1.hash.String() != blockMeta2.hash.String() || blockMeta1.r.Cmp(&blockMeta2.r) != 0 || blockMeta1.s.Cmp(&blockMeta2.s) != 0 {
 		return false
 	}
 
@@ -537,12 +544,12 @@ func blockMetasEqual(blockMeta1 BlockMeta, blockMeta2 BlockMeta) bool {
 // @param block2: the second block to compare
 // @return bool: true if the blocks are equal, false otherwise
 func blocksEqual(block1 Block, block2 Block) bool {
-	if block1.prev != block2.prev || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
+	if block1.prev.String() != block2.prev.String() || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
 		return false
 	}
 
 	for i := 0; i < len(block1.ops); i++ {
-		if block1.ops[i] != block2.ops[i] {
+		if !opMetasEqual(block1.ops[i], block2.ops[i]) {
 			return false
 		}
 	}
