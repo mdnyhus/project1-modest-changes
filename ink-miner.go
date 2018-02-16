@@ -19,7 +19,6 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/gob"
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -30,6 +29,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/hex"
+	//"crypto/x509"
+	//"encoding/pem"
 )
 
 // Static
@@ -1283,7 +1285,7 @@ func registerMinerToServer() error {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		fmt.Println(clientErr)
 		return ServerConnectionError("registration failure ")
@@ -1297,15 +1299,18 @@ func registerMinerToServer() error {
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
-	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
+	frequency := time.Duration(minerNetSettings.HeartBeat / 2) * time.Millisecond
+	for range time.Tick(frequency) {
 		var reply bool
 		// passing the miners public key and a dummy reply
-		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
+		clientErr := serverConn.Call("RServer.HeartBeat", publicKey, &reply)
 		if clientErr != nil {
-			//TODO: what do we want to do if the rpc call fails
-			return ServerConnectionError("heartbeat failure")
+			// TODO ->
+			fmt.Println(clientErr)
+			return clientErr
 		}
 	}
+
 	return nil
 }
 
@@ -1417,7 +1422,6 @@ func mine() {
 	for {
 		// acquire lock
 		blockLock.Lock()
-
 		for i := 0; i < numTries; i++ {
 			currBlock.nonce = strconv.Itoa(nonceTry)
 			nonceTry++
@@ -1454,9 +1458,10 @@ func mine() {
 				break
 			}
 		}
-
 		// give up lock
 		blockLock.Unlock()
+
+		//TODO breaks heartbeat
 	}
 }
 
@@ -1465,6 +1470,7 @@ func main() {
 	// skip program
 	args := os.Args[1:]
 
+	//numArgs := 3
 	numArgs := 1
 
 	// check number of arguments
@@ -1480,27 +1486,34 @@ func main() {
 
 	outgoingAddress = args[0]
 
-	// TODO: Uncomment the below:
-
 	//TODO: verify if this parse is this correct?
-	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
-	//if err != nil {
-	//	// can't proceed without a proper public key
-	//	fmt.Printf("miner needs a valid public key")
-	//	return
-	//}
-	//
-	//parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
-	//if err != nil {
-	//	// can't proceed without a proper private key
-	//	fmt.Printf("miner needs a valid private key")
-	//	return
-	//}
-	//
-	//publicKey = parsedPublicKey.(ecdsa.PublicKey)
-	//privateKey = *parsedPrivateKey
 
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	/*
+	pub, _ := pem.Decode([]byte(args[1]))
+	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub.Bytes)
+	if err != nil {
+		fmt.Println(err)
+		// can't proceed without a proper public key
+		fmt.Printf("miner needs a valid public key")
+		return
+	}
+	priv, _ := pem.Decode([]byte(args[2]))
+	parsedPrivateKey, err := x509.ParsePKCS1PrivateKey(priv.Bytes)
+	if err != nil {
+		// can't proceed without a proper private key
+		fmt.Println(err)
+		fmt.Printf("miner needs a valid private key")
+		return
+	}
+
+	publicKey = parsedPublicKey.(ecdsa.PublicKey)
+	privateKey = *parsedPrivateKey
+	*/
+
+	keyPointer, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
 	privKey := *keyPointer
 	publicKey = privKey.PublicKey
 	privateKey = privKey
@@ -1544,6 +1557,14 @@ func main() {
 	go startHeartBeat()
 
 	go requestForMoreNodesRoutine()
+
+	//Initializing the first block
+	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
+	if err != nil {
+		// Only occurs on startup. Panic to prevent miner from running in bad state.
+		panic(err)
+	}
+	currBlock = &Block{prev: blockartlib.Hash(genesisHash), len: 1}
 
 	go mine()
 
