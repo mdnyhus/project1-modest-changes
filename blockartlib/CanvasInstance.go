@@ -600,12 +600,17 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		}
 	}
 	if shape.BorderColor != TRANSPARENT {
-		// get border length of shape - just add all the edges up!
-		var edgeLength float64 = 0
-		for _, edge := range shape.Edges {
-			edgeLength += getLengthOfEdge(edge)
+		var borderLength float64 = 0
+		if !shape.IsCircle {
+			// get border length of shape - just add all the edges up!
+			for _, edge := range shape.Edges {
+				borderLength += getLengthOfEdge(edge)
+			}
+			floatInk += borderLength
+		} else if shape.IsCircle {
+			// circumference = 2 * pi * r
+			borderLength = 2 * math.Pi * shape.Radius
 		}
-		floatInk += edgeLength
 	}
 	ink = uint32(floatInk)
 	return ink, nil
@@ -632,23 +637,29 @@ func IsSimpleShape(shape *Shape) bool {
 // @param shape *Shape
 // @return int
 func getAreaOfShape(shape *Shape) (float64, error) {
-	// https://www.mathopenref.com/coordpolygonarea.html
-	var start Edge = shape.Edges[0]
-	var area float64 = getCrossProduct(start.Start, start.End)
-	current, err := findNextEdge(shape, start)
-	if err != nil {
-		return 0, errors.New("Couldn't find area of an open shape")
-	}
-	// keep looping until the "current" edge is the same as the Start edge, you've found a cycle
-	for start != *current {
-		area += getCrossProduct(current.Start, current.End)
-		current, err = findNextEdge(shape, *current)
+	if !shape.IsCircle {
+		// https://www.mathopenref.com/coordpolygonarea.html
+		var start Edge = shape.Edges[0]
+		var area float64 = getCrossProduct(start.Start, start.End)
+		current, err := findNextEdge(shape, start)
 		if err != nil {
 			return 0, errors.New("Couldn't find area of an open shape")
 		}
-	}
+		// keep looping until the "current" edge is the same as the Start edge, you've found a cycle
+		for start != *current {
+			area += getCrossProduct(current.Start, current.End)
+			current, err = findNextEdge(shape, *current)
+			if err != nil {
+				return 0, errors.New("Couldn't find area of an open shape")
+			}
+		}
 
-	return math.Abs(area / 2), nil
+		return math.Abs(area / 2), nil
+	} else if shape.IsCircle {
+		// area = pi * r^2
+		return math.Pi * math.Pow(shape.Radius, 2), nil
+	}
+	return 0, nil
 }
 
 // @param A Shape
