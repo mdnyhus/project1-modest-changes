@@ -13,7 +13,6 @@ class Canvas extends Component {
     }
 
     render() {
-        
         var width = this.props.canvas.width;
         var height = this.props.canvas.height;
         var htmlShapes
@@ -26,11 +25,20 @@ class Canvas extends Component {
             );
         }
         return (
-            <div>
-                <div id="canvas" style={{width: width, height: height}} className="canvas">
-                    {htmlShapes}
+            <div className="container">
+                <div className="row">
+                    <div className="col-md">
+                        <div id="canvas" style={{width: width, height: height}} className="canvas">
+                            {htmlShapes}
+                        </div>
+                        <button 
+                        className="btn btn-primary"
+                        onClick={() => this.props.renderCanvas(['<svg height="210" width="400"><path d="M150 0 L75 200 L225 200 Z" /></svg>','<svg height="210" width="400"><path d="M250 0 L75 200 L225 200 Z" /></svg>'])}>Render</button>
+                    </div>
+                    <div className="col-md">
+                        <h1>History</h1>
+                    </div>
                 </div>
-                <button onClick={() => this.props.renderCanvas(['<svg height="210" width="400"><path d="M150 0 L75 200 L225 200 Z" /></svg>','<svg height="210" width="400"><path d="M250 0 L75 200 L225 200 Z" /></svg>'])}>Render</button>
             </div>
         );
     }
