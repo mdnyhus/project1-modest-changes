@@ -1612,13 +1612,14 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", ":8080")
+	l, e := net.Listen("tcp", ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
 	}
 	go serverLibMin.Accept(l)
 	incomingAddress = l.Addr().String()
+	fmt.Printf("Listening for blockartlib calls on address: %s\n", incomingAddress)
 
 	// second, MinMin
 	serverMinMin := rpc.NewServer()
