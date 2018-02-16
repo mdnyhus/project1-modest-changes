@@ -218,6 +218,27 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	return nil
 }
 
+// Called when miner has been given this miner as a neighbour, to notify this miner
+// of its new neighbour.
+// @param addr *net.Addr: address of calling miner.
+// @param reply *bool: Bool indicating success of RPC.
+// @return error: Any errors produced during new block processing.
+func (m *MinMin) NotifyNewNeighbour(addr *net.Addr, reply *bool) error {
+	inkMiner := addNeighbour(*addr)
+	*reply = false
+	if inkMiner != nil {
+		*reply = true
+		// send new neighbour this miner's headBlockMeta
+		go inkMiner.conn.Call("MinMin.NotifyNewBlock", headBlockMeta, nil)
+
+		// send currently pending ops
+		for _, opMeta := range currBlock.ops {
+			go inkMiner.conn.Call("MinMin.NotifyNewOp", &opMeta, nil)
+		}
+	}
+	return nil
+}
+
 // Returns block identified with provided nonce.
 // @param nonce *string: Nonce of block to be returned.
 // @param block *Block: Pointer to block specified by nonce.
@@ -1302,22 +1323,41 @@ func getNodes() error {
 
 	neighboursLock.Lock()
 	for _, address := range newNeighbourAddresses {
-		// only add it if the neighbor does not already exist
-		if !doesNeighbourExist(address) {
-			client, err := rpc.Dial(address.Network(), address.String())
-			if err != nil {
-				// if we can not connect to a node, just try the next outgoingAddress
-				continue
-			} else {
-				inkMiner := InkMiner{}
-				inkMiner.conn = client
-				inkMiner.address = address
-				neighbours[address] = inkMiner
+		if inkMiner := addNeighbour(address); inkMiner != nil {
+			// notify new neighbours that you are their neighbour
+			var reply bool
+			inkMiner.conn.Call("MinMin.NotifyNewNeighbour", &address, &reply)
+			if !reply {
+				// remove neighbour from map
+				delete(neighbours, address)
 			}
 		}
 	}
-
 	neighboursLock.Unlock()
+	return nil
+}
+
+/*
+	Tries to add neighbour to local slice of neighbours
+	NOTE: requires neighboursLock to be acquired before calling this function
+	@param: outgoing address of the new neighbour
+	@return: InkMiner of added neighbour, nil if neighbour was not added
+*/
+func addNeighbour(address net.Addr) *InkMiner {
+	// only add it if the neighbor does not already exist
+	if !doesNeighbourExist(address) {
+		client, err := rpc.Dial(address.Network(), address.String())
+		if err != nil {
+			// can not connect to a node
+			return nil
+		}
+
+		inkMiner := InkMiner{conn: client, address: address}
+		neighbours[address] = inkMiner
+
+		return &inkMiner
+	}
+
 	return nil
 }
 
@@ -1476,7 +1516,7 @@ func main() {
 	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {
 		// can't proceed without a connection to the server
-		fmt.Printf("miner can not dial to the server")
+		fmt.Printf("miner cannot dial to the server")
 		return
 	}
 	serverConn = client
@@ -1496,8 +1536,8 @@ func main() {
 	incomingAddress = l.Addr().String()
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
-		// can not proceed if it is not register to the server
-		fmt.Printf("miner can not register itself to the server")
+		// cannot proceed if it is not register to the server
+		fmt.Printf("miner cannot register itself to the server")
 		return
 	}
 
