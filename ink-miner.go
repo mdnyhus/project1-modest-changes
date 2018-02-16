@@ -25,6 +25,7 @@ import (
 	"net/rpc"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -181,6 +182,27 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	defer headBlockLock.Unlock()
 
 	if blockMeta.block.len > headBlockMeta.block.len {
+		// head block is about to change; need to update currBlock
+		blockLock.Lock()
+		newOps := []OpMeta{}
+		verificationChan := make(chan error, 1)
+		for _, oldOp := range currBlock.ops {
+			// go through ops sequentially for simplicity
+			// TODO - if runtime is really bad, could make it parallel
+			go verifyOp(oldOp, blockMeta, verificationChan)
+			err := <-verificationChan
+			if err == nil {
+				// op is still valid (wasn't added in a previous block)
+				newOps = append(newOps, oldOp)
+			}
+		}
+		close(verificationChan)
+
+		currBlock.ops = newOps
+		currBlock.prev = blockMeta.hash
+		blockLock.Unlock()
+
+		// update headBlockMeta
 		headBlockMeta = blockMeta
 	}
 
@@ -451,17 +473,6 @@ func (l *LibMin) GetChildren(args *[]byte, reply *blockartlib.GetChildrenReply) 
 	}
 
 	reply.Error = nil
-	return nil
-}
-
-// TODO
-// Closes the canvas
-// @param args args *int: dummy argument that is not used
-// @param reply *uint32: hash of genesis block
-// @param err error: Any errors produced
-func (l *LibMin) CloseCanvas(args *int, reply *string) (err error) {
-	// TODO
-	*reply = ""
 	return nil
 }
 
@@ -768,6 +779,7 @@ func hashString(s string) []byte {
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
 func verifyBlockNonce(hash string) error {
+	// TODO - if PoWDifficultyNoOpBlock is different, need to check if there are any ops
 	n := int(minerNetSettings.PoWDifficultyOpBlock)
 	if hash[len(hash)-n:] == strings.Repeat("0", n) {
 		return nil
@@ -1307,6 +1319,69 @@ func requestForMoreNodesRoutine() error {
 	return nil
 }
 
+/*
+	Tries to find a nonce such that the hash of the block has the correct
+	number of trailing zeros
+	Since acquiring a lock can be expensive, this function tries some n nonces
+	before giving up the lock, and then trying to re-acquire it
+*/
+func mine() {
+	// number of nonces to try before giving up lock
+	numTries := 1000
+
+	// so that we don't check the same nonce again and again,
+	// keep a value that is always incremented. It will (eventually)
+	// roll over, but that's ok; by then, the curBlock will have almost
+	// certainly changed
+	nonceTry := 0
+
+	// should be trying to mine constantly
+	for {
+		// acquire lock
+		blockLock.Lock()
+
+		for i := 0; i < numTries; i++ {
+			currBlock.nonce = strconv.Itoa(nonceTry)
+			nonceTry++
+			currNonceHash := hashBlock(*currBlock)
+			if err := verifyBlockNonce(currNonceHash.String()); err == nil {
+				// currBlock is now a valid block
+				// so create BlockMeta to wrap around currBlock
+				hash := hashBlock(*currBlock)
+				r, s, err := ecdsa.Sign(rand.Reader, &privateKey, hash)
+				if err != nil {
+					// if encountered an error, just skip this nonce
+					continue
+				}
+
+				newBlockMeta := &BlockMeta{
+					hash:  hash,
+					r:     *r,
+					s:     *s,
+					block: *currBlock,
+				}
+
+				// the RPC call does the work we need, so just call it from within this miner
+				m := new(MinMin)
+				var reply bool
+				// if it's successful, we want to start with a clean block
+				// if it's unsuccessful, it's the responsability of op routines to add back
+				// operations, at which point they will be re-validated (but this case should
+				// never actually happen)
+				// in both cases, we don't care about the result
+				m.NotifyNewBlock(newBlockMeta, &reply)
+
+				block := Block{prev: hash, len: currBlock.len + 1}
+				currBlock = &block
+				break
+			}
+		}
+
+		// give up lock
+		blockLock.Unlock()
+	}
+}
+
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
@@ -1392,6 +1467,9 @@ func main() {
 
 	go requestForMoreNodesRoutine()
 
-	//time.Sleep(10 * time.Minute)
-	// TODO - should start mining
+	go mine()
+
+	for {
+
+	}
 }

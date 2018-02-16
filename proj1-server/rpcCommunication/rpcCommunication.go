@@ -8,9 +8,9 @@ ink-miner. It has the copied structs from server due to the main package conflic
 package rpcCommunication
 
 import (
-	"net"
-	"crypto/ecdsa"
 	"../../blockartlib"
+	"crypto/ecdsa"
+	"net"
 )
 
 type MinerInfo struct {
@@ -34,7 +34,8 @@ type MinerSettings struct {
 	HeartBeat uint32
 
 	// Proof of work difficulty: number of zeroes in prefix (>=0)
-	PoWDifficultyOpBlock   uint8
+	PoWDifficultyOpBlock uint8
+	// TODO - are these ever different?
 	PoWDifficultyNoOpBlock uint8
 }
 
