@@ -19,6 +19,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -29,7 +30,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"encoding/hex"
+	//"crypto/x509"
+	//"encoding/pem"
+	"crypto/x509"
 )
 
 // Static
@@ -49,7 +52,7 @@ var neighbours = make(map[net.Addr]InkMiner)
 var neighboursLock = &sync.Mutex{}
 
 // Network
-var blockTree map[string]*BlockMeta
+var blockTree = make(map[string]*BlockMeta)
 var serverConn *rpc.Client
 var outgoingAddress string
 var incomingAddress string
@@ -60,9 +63,6 @@ var minerNetSettings *rpcCommunication.MinerNetSettings
 // slice of operation threads' channels that need to know about new blocks
 var opChans = make(map[string](chan *BlockMeta))
 var opChansLock = &sync.Mutex{}
-
-// FIXME
-var ink int // TODO Do we want this? Or do we want a func that scans blockchain before & after op validation
 
 type OpMeta struct {
 	hash blockartlib.Hash
@@ -76,7 +76,7 @@ type Op struct {
 	owner           ecdsa.PublicKey        // public key of miner that issued this op.
 }
 
-func (o Op) String() string {
+func (o Op) ToString() string {
 	return fmt.Sprintf("%v", o)
 }
 
@@ -94,7 +94,7 @@ type Block struct {
 	nonce string
 }
 
-func (b Block) String() string {
+func (b Block) ToString() string {
 	return fmt.Sprintf("%+v", b)
 }
 
@@ -146,15 +146,13 @@ func (e MinerSettingNotFound) Error() string {
 // op if it is valid.
 // @param op *Op: Op which will be verified, and potentially added and flooeded
 // @param reply *bool: Bool indicating whether op was successfully validated
-// @return error: TODO
+// @return err error: Any errors in receiving op.
 func (m *MinMin) NotifyNewOp(opMeta *OpMeta, reply *bool) (err error) {
-	// TODO - check if op has already been seen, and only flood if it is new
-	// if op is validated, receiveNewOp will put op in currBlock and flood the op
-	*reply = false
-	if e := receiveNewOp(*opMeta); e == nil {
+	*reply = true
+	if e := receiveNewOp(*opMeta); e != nil {
 		// validate was successful only if error is null
-		// TODO - is the error  useful?
-		*reply = true
+		*reply = false
+		return e
 	}
 	return nil
 }
@@ -181,25 +179,26 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	*reply = true
 	headBlockLock.Lock()
 	defer headBlockLock.Unlock()
-
 	if blockMeta.block.len > headBlockMeta.block.len {
 		// head block is about to change; need to update currBlock
 		blockLock.Lock()
-		newOps := []OpMeta{}
+		oldOps := currBlock.ops
+		currBlock.ops = []OpMeta{}
 		verificationChan := make(chan error, 1)
-		for _, oldOp := range currBlock.ops {
+		for _, oldOp := range oldOps {
 			// go through ops sequentially for simplicity
 			// TODO - if runtime is really bad, could make it parallel
-			go verifyOp(oldOp, blockMeta, verificationChan)
+			// FIXME
+			pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
+			go verifyOp(oldOp, &pseudoCurrBlockMeta, -1, verificationChan)
 			err := <-verificationChan
 			if err == nil {
-				// op is still valid (wasn't added in a previous block)
-				newOps = append(newOps, oldOp)
+				// op is still valid
+				currBlock.ops = append(currBlock.ops, oldOp)
 			}
 		}
 		close(verificationChan)
 
-		currBlock.ops = newOps
 		currBlock.prev = blockMeta.hash
 		blockLock.Unlock()
 
@@ -216,6 +215,27 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 
 	floodBlock(*blockMeta)
 
+	return nil
+}
+
+// Called when miner has been given this miner as a neighbour, to notify this miner
+// of its new neighbour.
+// @param addr *net.Addr: address of calling miner.
+// @param reply *bool: Bool indicating success of RPC.
+// @return error: Any errors produced during new block processing.
+func (m *MinMin) NotifyNewNeighbour(addr *net.Addr, reply *bool) error {
+	inkMiner := addNeighbour(*addr)
+	*reply = false
+	if inkMiner != nil {
+		*reply = true
+		// send new neighbour this miner's headBlockMeta
+		go inkMiner.conn.Call("MinMin.NotifyNewBlock", headBlockMeta, nil)
+
+		// send currently pending ops
+		for _, opMeta := range currBlock.ops {
+			go inkMiner.conn.Call("MinMin.NotifyNewOp", &opMeta, nil)
+		}
+	}
 	return nil
 }
 
@@ -243,7 +263,6 @@ func (l *LibMin) OpenCanvas(args *blockartlib.OpenCanvasArgs, reply *blockartlib
 	if args.Priv != privateKey || args.Pub != publicKey {
 		return blockartlib.DisconnectedError("")
 	}
-	// TODO: Do we want canvas settings?
 	*reply = blockartlib.OpenCanvasReply{CanvasSettings: minerNetSettings.CanvasSettings}
 	return nil
 }
@@ -302,8 +321,13 @@ func (l *LibMin) AddShape(args *blockartlib.AddShapeArgs, reply *blockartlib.Add
 	resultErr := <-returnChan
 	if resultErr != nil {
 		reply.Error = err
+		return nil
 	}
-	return nil
+
+	reply.OpHash = hash.ToString()
+	// Get ink
+	getInkArgs := blockartlib.GetInkArgs{Miner: publicKey}
+	return l.GetInk(&getInkArgs, &reply.InkRemaining)
 }
 
 // Returns the full SvgString for the given hash, if it exists locally, and even if it was later deleted
@@ -317,16 +341,38 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 	// do not search externally; assume that any external blocks will get
 	// flooded to this miner soon.
-	shape := findShape(args.ShapeHash)
-	if shape != nil {
+	opMeta := findOpMeta(args.OpHash)
+	if opMeta == nil {
 		// shape does not exist, return InvalidShapeHashError
-		reply.Error = blockartlib.InvalidShapeHashError(args.ShapeHash)
+		reply.Error = blockartlib.InvalidShapeHashError(args.OpHash)
 		return nil
+	}
+
+	shapeMeta := opMeta.op.shapeMeta
+	var stroke, fill string
+	if shapeMeta != nil {
+		// this is an add op
+		stroke = shapeMeta.Shape.BorderColor
+		fill = shapeMeta.Shape.FillColor
+	}
+	if shapeMeta == nil {
+		// this is a delete op
+		// find the shape by hash
+		shapeMeta = findShapeMeta(opMeta.op.deleteShapeHash)
+		if shapeMeta == nil {
+			// shape does not exist, return InvalidShapeHashError
+			reply.Error = blockartlib.InvalidShapeHashError(args.OpHash)
+			return nil
+		}
+
+		// return a white shape, to delete the shape
+		stroke = "white"
+		fill = "white"
 	}
 
 	// Return html-valid tag, of the form:
 	// <path d=[svgString] stroke=[stroke] fill=[fill]/>
-	reply.SvgString = fmt.Sprintf("<path d=\"%s\" stroke=\"%s\" fill=\"%s\"/>", shape.Svg, shape.BorderColor, shape.FillColor)
+	reply.SvgString = fmt.Sprintf("<path d=\"%s\" stroke=\"%s\" fill=\"%s\"/>", shapeMeta.Shape.Svg, stroke, fill)
 	reply.Error = nil
 	return nil
 }
@@ -337,11 +383,10 @@ func (l *LibMin) GetSvgString(args *blockartlib.GetSvgStringArgs, reply *blockar
 // @param err error: Any errors produced
 func (l *LibMin) GetInk(args *blockartlib.GetInkArgs, reply *uint32) (err error) {
 	// acquire currBlock's lock
-	// TODO - is this needed? it's read-only (is it?)
 	blockLock.Lock()
 	defer blockLock.Unlock()
 
-	*reply = inkAvail(args.Miner, currBlock)
+	*reply = inkAvailCurr()
 	return nil
 }
 
@@ -443,14 +488,13 @@ func (l *LibMin) GetShapes(args *string, reply *blockartlib.GetShapesReply) (err
 // @param reply *uint32: hash of genesis block
 // @param err error: Any errors produced
 func (l *LibMin) GetGenesisBlock(args *int, reply *blockartlib.Hash) (err error) {
-	if minerNetSettings.GenesisBlockHash == blockartlib.Hash([]byte{}).String() {
+	if minerNetSettings.GenesisBlockHash == blockartlib.Hash([]byte{}).ToString() {
 		return GensisBlockNotFound("")
 	}
 	*reply, _ = hex.DecodeString(minerNetSettings.GenesisBlockHash)
 	return nil
 }
 
-// TODO
 // Returns the shape hashes contained by the block in BlockHash
 // NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 // do not search externally; assume that any external blocks will get
@@ -511,7 +555,7 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta Op
 			}
 
 			var ok bool
-			if cur, ok = blockTree[cur.block.prev.String()]; !ok {
+			if cur, ok = blockTree[cur.block.prev.ToString()]; !ok {
 				// chain should have been valid, this should never happen
 				// just ignore this block
 				break chainCrawl
@@ -535,7 +579,7 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta Op
 // @param block2: the second OpMeta to compare
 // @return bool: true if the OpMetas are equal, false otherwise
 func opMetasEqual(opMeta1 OpMeta, opMeta2 OpMeta) bool {
-	return opMeta1.hash.String() == opMeta2.hash.String() && opMeta1.r.Cmp(&opMeta2.r) == 0 && opMeta1.s.Cmp(&opMeta2.s) == 0 && opMeta1.op == opMeta2.op
+	return opMeta1.hash.ToString() == opMeta2.hash.ToString() && opMeta1.r.Cmp(&opMeta2.r) == 0 && opMeta1.s.Cmp(&opMeta2.s) == 0 && opMeta1.op == opMeta2.op
 }
 
 // Compares two blockMetas, and returns true if they are equal
@@ -543,7 +587,7 @@ func opMetasEqual(opMeta1 OpMeta, opMeta2 OpMeta) bool {
 // @param block2: the second blockMeta to compare
 // @return bool: true if the blockMetas are equal, false otherwise
 func blockMetasEqual(blockMeta1 BlockMeta, blockMeta2 BlockMeta) bool {
-	if blockMeta1.hash.String() != blockMeta2.hash.String() || blockMeta1.r.Cmp(&blockMeta2.r) != 0 || blockMeta1.s.Cmp(&blockMeta2.s) != 0 {
+	if blockMeta1.hash.ToString() != blockMeta2.hash.ToString() || blockMeta1.r.Cmp(&blockMeta2.r) != 0 || blockMeta1.s.Cmp(&blockMeta2.s) != 0 {
 		return false
 	}
 
@@ -556,7 +600,7 @@ func blockMetasEqual(blockMeta1 BlockMeta, blockMeta2 BlockMeta) bool {
 // @param block2: the second block to compare
 // @return bool: true if the blocks are equal, false otherwise
 func blocksEqual(block1 Block, block2 Block) bool {
-	if block1.prev.String() != block2.prev.String() || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
+	if block1.prev.ToString() != block2.prev.ToString() || block1.len != block2.len || block1.nonce != block2.nonce || len(block1.ops) != len(block2.ops) {
 		return false
 	}
 
@@ -569,27 +613,44 @@ func blocksEqual(block1 Block, block2 Block) bool {
 	return true
 }
 
-// Searches for a shape in the set of local blocks with the given hash.
-// Note: this function does not care whether the shape was later deleted
-// @param deleteShapeHash string: hash of shape that is being searched for
-// @return shape *blockartlib.Shape: found shape whose hash matches deleteShapeHash; nil if it does not
-//                                   exist or was deleted
-func findShape(deleteShapeHash string) (shape *blockartlib.Shape) {
+// Searches for an opMeta in the set of local blocks with the given hash.
+// @param opHash string: hash of opMeta that is being searched for
+// @return shape: found op whose hash matches opHash; nil if it does not exist
+func findOpMeta(opHash string) (opMeta *OpMeta) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
 	for _, blockMeta := range blockTree {
 		block := blockMeta.block
-		// search through the block, searching for the add op for a shape with this hash
+		// search through the block's ops
 		for _, opMeta := range block.ops {
-			op := opMeta.op
-			if op.shapeMeta != nil && op.shapeMeta.Hash == deleteShapeHash {
-				// shape was found
-				return &op.shapeMeta.Shape
-				// keep searching through the block in case it is later deleted
+			if opMeta.hash.ToString() == opHash {
+				// opMeta was found
+				return &opMeta
 			}
 		}
 	}
 
-	// shape was not found
+	// opMeta was not found
+	return nil
+}
+
+// Searches for a shapeMeta with the given hash in the set of add ops in local blocks.
+// @param shapeHash string: hash of shapeMeta that is being searched for
+// @return shapeMeta: found shapeMeta whose hash matches shapeHash; nil if it does not
+//                    exist
+func findShapeMeta(shapeHash string) (shapeMeta *blockartlib.ShapeMeta) {
+	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	for _, blockMeta := range blockTree {
+		block := blockMeta.block
+		// search through the block's ops
+		for _, opMeta := range block.ops {
+			if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == shapeHash {
+				// shapeMeta was found
+				return opMeta.op.shapeMeta
+			}
+		}
+	}
+
+	// shapeMeta was not found
 	return nil
 }
 
@@ -689,7 +750,7 @@ func crawlNoopHelper(blockMeta *BlockMeta, args interface{}, reply interface{}) 
 // @return Block: The requested block, or nil if no block is found.
 func crawlChainHelperGetBlock(hash blockartlib.Hash) (blockMeta *BlockMeta) {
 	// Search locally.
-	if blockMeta, ok := blockTree[hash.String()]; ok && blockMeta != nil {
+	if blockMeta, ok := blockTree[hash.ToString()]; ok && blockMeta != nil {
 		return blockMeta
 	}
 
@@ -718,7 +779,7 @@ func validateBlock(chain []*BlockMeta) (err error) {
 	blockMeta := *chain[0]
 
 	// Verify hash.
-	if hashBlock(blockMeta.block).String() != blockMeta.hash.String() {
+	if hashBlock(blockMeta.block).ToString() != blockMeta.hash.ToString() {
 		return blockartlib.InvalidBlockHashError(blockMeta.hash)
 	}
 	// Verify block signature.
@@ -726,7 +787,7 @@ func validateBlock(chain []*BlockMeta) (err error) {
 		return blockartlib.InvalidBlockHashError(string(blockMeta.hash))
 	}
 	// Verify POW.
-	if err = verifyBlockNonce(blockMeta.block.nonce); err != nil {
+	if err = verifyBlockNonce(blockMeta.block.nonce, len(blockMeta.block.ops) == 0); err != nil {
 		return err
 	}
 	// Verify ops.
@@ -742,19 +803,15 @@ func validateBlock(chain []*BlockMeta) (err error) {
 // @return bool: True iff block is genesis block.
 func isGenesis(blockMeta BlockMeta) bool {
 	block := blockMeta.block
-	// TODO: What is gensis def'n? Who signs it?
-	// TODO: def'n of Genesis block? ---> Is this the proper hash
-	return string(block.prev) == "" && hashBlock(block).String() == minerNetSettings.GenesisBlockHash
+	return block.prev.ToString() == "" && hashBlock(block).ToString() == minerNetSettings.GenesisBlockHash
 }
-
-// TODO: Might not be worth doing, but do we need seperate hash functions?
 
 // Returns hash of block.
 // @param block Block: Block to be hashed.
 // @return Hash: The hash of the block.
 func hashBlock(block Block) blockartlib.Hash {
 	hasher := md5.New()
-	hasher.Write([]byte(block.String()))
+	hasher.Write([]byte(block.ToString()))
 	return blockartlib.Hash(hasher.Sum(nil)[:])
 }
 
@@ -763,7 +820,7 @@ func hashBlock(block Block) blockartlib.Hash {
 // @return Hash: The hash of the op.
 func hashOp(op Op) blockartlib.Hash {
 	hasher := md5.New()
-	hasher.Write([]byte(op.String()))
+	hasher.Write([]byte(op.ToString()))
 	return blockartlib.Hash(hasher.Sum(nil)[:])
 }
 
@@ -779,9 +836,12 @@ func hashString(s string) []byte {
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
-func verifyBlockNonce(hash string) error {
-	// TODO - if PoWDifficultyNoOpBlock is different, need to check if there are any ops
-	n := int(minerNetSettings.PoWDifficultyOpBlock)
+func verifyBlockNonce(hash string, noop bool) error {
+	pow := minerNetSettings.PoWDifficultyOpBlock
+	if noop {
+		pow = minerNetSettings.PoWDifficultyNoOpBlock
+	}
+	n := int(pow)
 	if hash[len(hash)-n:] == strings.Repeat("0", n) {
 		return nil
 	}
@@ -793,21 +853,10 @@ func verifyBlockNonce(hash string) error {
 // @return error: nil iff valid.
 func verifyOps(block Block) error {
 	verificationChan := make(chan error, 1)
-	for i, opMeta := range block.ops {
-		op := opMeta.op
-		if err := validateShape(op.shapeMeta); err != nil {
-			return err
-		}
 
-		// Ensure op does not conflict with previous ops.
-		for j := 0; j < i; j++ {
-			if jOp := block.ops[j].op; op.owner != jOp.owner {
-				if blockartlib.ShapesIntersect(op.shapeMeta.Shape, jOp.shapeMeta.Shape, minerNetSettings.CanvasSettings) {
-					return blockartlib.ShapeOverlapError(string(op.shapeMeta.Hash))
-				}
-			}
-		}
-		go verifyOp(opMeta, blockTree[block.prev.String()], verificationChan)
+	pseudoBlockMeta := BlockMeta{block: block}
+	for i, opMeta := range block.ops {
+		go verifyOp(opMeta, &pseudoBlockMeta, i, verificationChan)
 	}
 
 	pendingVerifications := len(block.ops)
@@ -821,19 +870,18 @@ func verifyOps(block Block) error {
 	return nil
 }
 
-// Verifies an op against all previous ops in the blockchain. Assumes all previous blocks in chain are valid.
-// LOCKS: Acquires headBlockLock.
+// Verifies an op against all ops in the blockchain starting at blockMeta. Assumes all previous blocks in
+// chain are valid. Skip the operation itself for validation.
+// ASSUME: any blocks required for blockMeta have already been acquired
 // @param candidateOp Op: The op to verify.
-// @param block *Block: The headBlock on which to begin the verification.
+// @param blockMeta *Block: The starting blockMeta on which to begin the verification.
+//							Note: this does not need to be a fully valid block; it can also be a pseudo block meta
+//                                created around currBlock
 // @param ch chan<-error: The channel to which verification errors are piped into, or nil if no errors are found.
-// FIXME: Must work with currBlock which is not a BlockMeta.
-func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
-	headBlockLock.Lock()
-	defer headBlockLock.Unlock()
-
+func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, indexInBlock int, ch chan<- error) {
 	// Verify hash.
-	if hashOp(candidateOpMeta.op).String() != candidateOpMeta.hash.String() {
-		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.String())
+	if hashOp(candidateOpMeta.op).ToString() != candidateOpMeta.hash.ToString() {
+		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.ToString())
 		return
 	}
 
@@ -841,12 +889,18 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 
 	// Verify signature.
 	if !ecdsa.Verify(&candidateOp.owner, candidateOpMeta.hash, &candidateOpMeta.r, &candidateOpMeta.s) {
-		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.String())
+		ch <- blockartlib.InvalidShapeHashError(candidateOpMeta.hash.ToString())
 		return
 	}
 
-	// Verify op with shape.
 	if candidateOp.shapeMeta != nil {
+		// Verify shape.
+		if err := validateShape(candidateOp.shapeMeta); err != nil {
+			ch <- err
+			return
+		}
+
+		// Verify op with shape.
 		shape := candidateOp.shapeMeta.Shape
 		// Ensure svg string isn't beyond the maximum specified length.
 		if svg := shape.Svg; blockartlib.IsSvgTooLong(svg) {
@@ -861,9 +915,12 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 		}
 
 		// Ensure miner has enough ink.
-		ink, err := blockartlib.InkUsed(&shape)
-		inkAvail := inkAvail(candidateOp.owner, &headBlockMeta.block)
-		if err != nil || inkAvail < ink {
+		inkAvail := inkAvail(candidateOp.owner, blockMeta)
+		if indexInBlock >= 0 {
+			// op is in the block, so don't double count the ink it uses
+			inkAvail -= shape.Ink
+		}
+		if inkAvail < shape.Ink {
 			ch <- blockartlib.InsufficientInkError(inkAvail)
 			return
 		}
@@ -871,10 +928,16 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 		// Ensure op is not duplicate and shape does not overlap with other ops in the chain.
 		curr := blockMeta
 		for {
-			for _, opMeta := range curr.block.ops {
+			for i, opMeta := range curr.block.ops {
+				// test if curr == blockMeta
+				// aren't guaranteed blockMeta is a valid meta, just use block
+				if curr.block.prev.ToString() == blockMeta.block.prev.ToString() && i == indexInBlock {
+					// this is the op itself in the block; skip it
+					continue
+				}
+
 				// This op has been performed before.
-				if candidateOpMeta.hash.String() == opMeta.hash.String() {
-					// TODO: More specific error?
+				if candidateOpMeta.hash.ToString() == opMeta.hash.ToString() {
 					ch <- blockartlib.OutOfBoundsError{}
 					return
 				}
@@ -892,25 +955,69 @@ func verifyOp(candidateOpMeta OpMeta, blockMeta *BlockMeta, ch chan<- error) {
 			}
 
 			var ok bool
-			curr, ok = blockTree[curr.block.prev.String()]
+			curr, ok = blockTree[curr.block.prev.ToString()]
 			if !ok {
-				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.String())
+				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.ToString())
 				return
 			}
 		}
-		// Verify deletion op.
 	} else {
-		if err := shapeExists(candidateOp.deleteShapeHash, candidateOp.owner, blockMeta); err != nil {
-			ch <- err
-			return
+		// op is a delete; verify shape existed on the canvas, and belonged to this miner
+		curr := blockMeta
+		for {
+			for i, opMeta := range curr.block.ops {
+				// only want to search through ops that appear *before* this op, so if i == -1, that's all ops
+				// and if i >= 0, that's all ops with a *smaller* index
+				// test if curr == blockMeta, and that the
+				// aren't guaranteed blockMeta is a valid meta, just use block
+				if curr.block.prev.ToString() == blockMeta.block.prev.ToString() && indexInBlock >= 0 && i >= indexInBlock {
+					// this op is after candidateOpMeta
+					continue
+				}
+
+				// check duplicate
+				if opMeta.hash.ToString() == candidateOpMeta.hash.ToString() {
+					// op is a duplicate; this is an error
+					ch <- blockartlib.ShapeOwnerError(candidateOp.deleteShapeHash)
+					return
+				}
+
+				if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == opMeta.op.deleteShapeHash {
+					// found the op for adding the shape
+					if opMeta.op.owner == candidateOp.owner {
+						// correct owner
+						ch <- nil
+						return
+					}
+
+					// incorrect owner
+					ch <- blockartlib.ShapeOwnerError(candidateOp.deleteShapeHash)
+					return
+				}
+			}
+
+			// Exit loop once we verify no overlap conflicts in the genesis block.
+			if isGenesis(*curr) {
+				break
+			}
+
+			var ok bool
+			curr, ok = blockTree[curr.block.prev.ToString()]
+			if !ok {
+				ch <- blockartlib.InvalidBlockHashError(curr.block.prev.ToString())
+				return
+			}
 		}
+
+		// could not find shape
+		ch <- blockartlib.ShapeOwnerError(candidateOp.deleteShapeHash)
+		return
 	}
+
 	ch <- nil
 	return
 }
 
-// TODO this and floodBlock currentl share almost all the code. If worth it, call helper
-//      function that takes the function and paramters.
 // Sends op to all neighbours.
 // LOCKS: Calls neighboursLock.Lock().
 // @param opMeta OpMeta: Op to be broadcast.
@@ -927,15 +1034,11 @@ func floodOp(opMeta OpMeta) {
 		_ = n.conn.Go("NotifyNewOp", opMeta, &reply, replyChan)
 	}
 
-	// TODO: Handle errors, chain disagreements. Discuss with team.
-	// Current implementation simply sends out blocks and doesn't
-	// care about the response.
 	for replies != len(neighbours) {
 		select {
 		case <-replyChan:
 			replies++
 		case <-time.After(2 * time.Second):
-			// TODO Do we care? Noop for now.
 			replies++
 		}
 	}
@@ -957,27 +1060,13 @@ func floodBlock(blockMeta BlockMeta) {
 		_ = n.conn.Go("NotifyNewBlock", blockMeta, &reply, replyChan)
 	}
 
-	// TODO: Handle errors, chain disagreements. Discuss with team.
-	// Current implementation simply sends out blocks and doesn't
-	// care about the response.
 	for replies != len(neighbours) {
 		select {
 		case <-replyChan:
 			replies++
 		case <-time.After(2 * time.Second):
-			// TODO Do we care? Noop for now.
 			replies++
 		}
-	}
-}
-
-// TODO: Validate stub.
-// Continually searches for nonce for the global currBlock.
-// Runs on seperate thread. All interactions should take place
-// over a chan, or through a Mutex.
-func solveNonce() {
-	for {
-		// TODO
 	}
 }
 
@@ -998,9 +1087,8 @@ func receiveNewOp(opMeta OpMeta) (err error) {
 
 	// check if op is valid
 	verifyCh := make(chan error, 1)
-	// FIXME: verifyOp needs to be fixed. 2nd arg should be currBlock!!!
-	deleteMePleaseCurrBlockMeta := BlockMeta{block: *currBlock}
-	verifyOp(opMeta, &deleteMePleaseCurrBlockMeta, verifyCh)
+	pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
+	go verifyOp(opMeta, &pseudoCurrBlockMeta, -1, verifyCh)
 
 	err = <-verifyCh
 	if err != nil {
@@ -1026,7 +1114,6 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 
 	// Ensure hash is correct.
 	if candidateShapeMeta.Hash != blockartlib.HashShape(candidateShape) {
-		// TODO: No custom error type?
 		return blockartlib.OutOfBoundsError{}
 	}
 
@@ -1075,43 +1162,11 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 		return blockartlib.OutOfBoundsError{}
 	}
 
-	// TODO: Check if shape is self-intersecting. Depends on Justin's PR.
-	//       Invoke function `isSimpleShape`
+	if !blockartlib.IsSimpleShape(shape) {
+		return blockartlib.OutOfBoundsError{}
+	}
 
 	return blockartlib.OutOfBoundsError{}
-}
-
-// TODO
-// - checks if the passed shape intersects with any shape currently on the canvas
-//   that is NOT owned by this miner, starting at headBlock
-// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param shape *blockartlib.Shape: pointer to shape that will be checked for
-//                                  intersections
-// @param headBlock *Block: head block of chain from which ink will be calculated
-// @return shapeOverlapHash string: empty if shape does intersect with any other
-//                                  non-owned shape; otherwise it is the hash of
-//                                  the shape this shape overlaps
-func shapeOverlaps(shape *blockartlib.Shape, headBlock *Block) (shapeOverlapHash string) {
-	// TODO
-	return ""
-}
-
-// TODO
-// Checks if a shape with the given hash exists on the canvas (and was not later
-// deleted) starting at headBlock, and that the passed owner is the owner of this shape
-// Returned error is nil if shape does exist and is owned by owner, otherwise returns
-// a non-nil error
-// - ASSUMES that if any locks are requred for headBlock, they have already been acquired
-// @param deleteShapeHash string: hash of shape to check
-// @param owner ecdsa.PublicKey: public key identfying miner
-// @param headBlock *Block: head block of chain from which ink will be calculated
-// @return err error: Error indicating if shape is valid. Can be nil or one
-//                    of the following errors:
-// 						- ShapeOwnerError
-//						- TODO - error if shape does not exist?
-func shapeExists(deleteShapeHash string, owner ecdsa.PublicKey, headBlock *BlockMeta) (err error) {
-	// TODO
-	return blockartlib.ShapeOwnerError(deleteShapeHash)
 }
 
 ///////////////////////////////////////////////////////////
@@ -1176,6 +1231,15 @@ func inkAvailCrawlHelper(blockMeta *BlockMeta, args interface{}, reply interface
 		}
 	}
 
+	if ecdsa.Verify(&crawlArgs.miner, blockMeta.hash, &blockMeta.r, &blockMeta.s) {
+		// this block was created by the miner; add the ink you get for mining
+		if len(blockMeta.block.ops) == 0 {
+			crawlReply.ink += minerNetSettings.InkPerNoOpBlock
+		} else {
+			crawlReply.ink += minerNetSettings.InkPerOpBlock
+		}
+	}
+
 	// TODO - add ink if crawlArgs.miner mined this block
 
 	// Continue searching down the chain
@@ -1199,15 +1263,55 @@ func searchSlice(search string, slice []string) (index int) {
 // - ASSUMES that if any locks are requred for headBlock, they have already been acquired
 // @param owner ecdsa.PublicKey: public key identfying miner
 // @param headBlock *Block: head block of chain from which ink will be calculated
-// @return ink uint32: ink currently available to this miner, in pixels
-func inkAvail(miner ecdsa.PublicKey, headBlock *Block) (ink uint32) {
+// @return ink uint32: ink currently available to the miner, in pixels
+func inkAvail(miner ecdsa.PublicKey, headBlock *BlockMeta) (ink uint32) {
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
 	args := &inkAvailCrawlArgs{miner: miner}
 	var reply inkAvailCrawlReply
 
-	// FIXME: crawlChain operates on published chain, not unpublished currBlock.
-	deleteMeHeadBlockMeta := BlockMeta{block: *headBlock}
-	if err := crawlChain(&deleteMeHeadBlockMeta, inkAvailCrawlHelper, args, &reply); err != nil {
+	if err := crawlChain(headBlock, inkAvailCrawlHelper, args, &reply); err != nil {
+		// error while searching; just return 0
+		return 0
+	}
+
+	return reply.ink
+}
+
+// Counts the amount of ink currently available to this miner starting at currBlock
+// @return ink uint32: ink currently available to this miner, in pixels
+func inkAvailCurr() (ink uint32) {
+	// the crawl by default does all the work we need, so no special helper/args/reply is required
+	args := &inkAvailCrawlArgs{miner: publicKey}
+	var reply inkAvailCrawlReply
+
+	// first count up the amount of ink used in currBlock
+	// look only for delete operations
+	for _, opMeta := range currBlock.ops {
+		op := opMeta.op
+		if op.deleteShapeHash != "" && op.owner == publicKey {
+			// shape was removed and owned by this miner
+			reply.removedShapeHashes = append(reply.removedShapeHashes, op.deleteShapeHash)
+		}
+	}
+	// look only for added operations
+	for _, opMeta := range currBlock.ops {
+		op := opMeta.op
+		if op.shapeMeta != nil && op.owner == publicKey {
+			// shape was added and owned by this miner
+			index := searchSlice(op.shapeMeta.Hash, reply.removedShapeHashes)
+			if index >= 0 && index < len(reply.removedShapeHashes) {
+				// shape was later removed; do not charge for ink
+				// remove deleteShapeHash from the list of removedShapeHashes
+				reply.removedShapeHashes = append(reply.removedShapeHashes[:index], reply.removedShapeHashes[index+1:]...)
+			} else {
+				// shape was not removed
+				reply.ink -= op.shapeMeta.Shape.Ink
+			}
+		}
+	}
+
+	// second, go through the rest of the chain
+	if err := crawlChain(headBlockMeta, inkAvailCrawlHelper, args, &reply); err != nil {
 		// error while searching; just return 0
 		return 0
 	}
@@ -1225,7 +1329,7 @@ func registerMinerToServer() error {
 		return ServerConnectionError("resolve tcp error")
 	}
 	minerSettings := rpcCommunication.MinerInfo{Address: tcpAddr, Key: publicKey}
-	clientErr := serverConn.Call("RServer.Register", &minerSettings, &minerNetSettings)
+	clientErr := serverConn.Call("RServer.Register", minerSettings, &minerNetSettings)
 	if clientErr != nil {
 		fmt.Println(clientErr)
 		return ServerConnectionError("registration failure ")
@@ -1239,15 +1343,20 @@ func registerMinerToServer() error {
 	@return error: ServerConnectionError if connection to server fails
 */
 func startHeartBeat() error {
-	for range time.Tick(time.Millisecond * time.Duration(minerNetSettings.HeartBeat) / 2) {
+	frequency := time.Duration(minerNetSettings.HeartBeat/4) * time.Millisecond
+	for {
 		var reply bool
 		// passing the miners public key and a dummy reply
-		clientErr := serverConn.Call("RServer.HeartBeat", &publicKey, &reply)
+		clientErr := serverConn.Call("RServer.HeartBeat", publicKey, &reply)
 		if clientErr != nil {
-			//TODO: what do we want to do if the rpc call fails
-			return ServerConnectionError("heartbeat failure")
+			// TODO ->
+			fmt.Println(clientErr)
+			return clientErr
 		}
+
+		time.Sleep(frequency)
 	}
+
 	return nil
 }
 
@@ -1265,22 +1374,41 @@ func getNodes() error {
 
 	neighboursLock.Lock()
 	for _, address := range newNeighbourAddresses {
-		// only add it if the neighbor does not already exist
-		if !doesNeighbourExist(address) {
-			client, err := rpc.Dial(address.Network(), address.String())
-			if err != nil {
-				// if we can not connect to a node, just try the next outgoingAddress
-				continue
-			} else {
-				inkMiner := InkMiner{}
-				inkMiner.conn = client
-				inkMiner.address = address
-				neighbours[address] = inkMiner
+		if inkMiner := addNeighbour(address); inkMiner != nil {
+			// notify new neighbours that you are their neighbour
+			var reply bool
+			inkMiner.conn.Call("MinMin.NotifyNewNeighbour", &address, &reply)
+			if !reply {
+				// remove neighbour from map
+				delete(neighbours, address)
 			}
 		}
 	}
-
 	neighboursLock.Unlock()
+	return nil
+}
+
+/*
+	Tries to add neighbour to local slice of neighbours
+	NOTE: requires neighboursLock to be acquired before calling this function
+	@param: outgoing address of the new neighbour
+	@return: InkMiner of added neighbour, nil if neighbour was not added
+*/
+func addNeighbour(address net.Addr) *InkMiner {
+	// only add it if the neighbor does not already exist
+	if !doesNeighbourExist(address) {
+		client, err := rpc.Dial(address.Network(), address.String())
+		if err != nil {
+			// can not connect to a node
+			return nil
+		}
+
+		inkMiner := InkMiner{conn: client, address: address}
+		neighbours[address] = inkMiner
+
+		return &inkMiner
+	}
+
 	return nil
 }
 
@@ -1328,7 +1456,7 @@ func requestForMoreNodesRoutine() error {
 */
 func mine() {
 	// number of nonces to try before giving up lock
-	numTries := 1000
+	numTries := 100
 
 	// so that we don't check the same nonce again and again,
 	// keep a value that is always incremented. It will (eventually)
@@ -1340,12 +1468,11 @@ func mine() {
 	for {
 		// acquire lock
 		blockLock.Lock()
-
 		for i := 0; i < numTries; i++ {
 			currBlock.nonce = strconv.Itoa(nonceTry)
 			nonceTry++
 			currNonceHash := hashBlock(*currBlock)
-			if err := verifyBlockNonce(currNonceHash.String()); err == nil {
+			if err := verifyBlockNonce(currNonceHash.ToString(), len(currBlock.ops) == 0); err == nil {
 				// currBlock is now a valid block
 				// so create BlockMeta to wrap around currBlock
 				hash := hashBlock(*currBlock)
@@ -1377,18 +1504,22 @@ func mine() {
 				break
 			}
 		}
-
 		// give up lock
 		blockLock.Unlock()
+
+		time.Sleep(time.Second)
+
+		//TODO breaks heartbeat
 	}
 }
 
+// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`"
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 1
+	numArgs := 3
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1403,32 +1534,26 @@ func main() {
 
 	outgoingAddress = args[0]
 
-	// TODO: Uncomment the below:
+	pub, err := hex.DecodeString(args[1])
+	if err != nil {
+		fmt.Println(args[1])
+		panic(err)
+	}
+	parsedPublicKey, err := x509.ParsePKIXPublicKey(pub)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Printf("miner needs a valid public key")
+		return
+	}
+	priv, _ := hex.DecodeString(args[2])
+	parsedPrivateKey, err := x509.ParseECPrivateKey(priv)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Printf("miner needs a valid private key")
+	}
+	publicKey = *parsedPublicKey.(*ecdsa.PublicKey)
+	privateKey = *parsedPrivateKey
 
-	//TODO: verify if this parse is this correct?
-	//parsedPublicKey, err := x509.ParsePKIXPublicKey([]byte(args[1]))
-	//if err != nil {
-	//	// can't proceed without a proper public key
-	//	fmt.Printf("miner needs a valid public key")
-	//	return
-	//}
-	//
-	//parsedPrivateKey, err := x509.ParseECPrivateKey([]byte(args[2]))
-	//if err != nil {
-	//	// can't proceed without a proper private key
-	//	fmt.Printf("miner needs a valid private key")
-	//	return
-	//}
-	//
-	//publicKey = parsedPublicKey.(ecdsa.PublicKey)
-	//privateKey = *parsedPrivateKey
-
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	privKey := *keyPointer
-	publicKey = privKey.PublicKey
-	privateKey = privKey
-
-	// TODO -> so we should not need to use P224 or 226 in our encryption
 	gob.Register(&net.TCPAddr{})
 	gob.Register(&elliptic.CurveParams{})
 	gob.Register(elliptic.P224())
@@ -1439,7 +1564,7 @@ func main() {
 	client, err := rpc.Dial("tcp", outgoingAddress)
 	if err != nil {
 		// can't proceed without a connection to the server
-		fmt.Printf("miner can not dial to the server")
+		fmt.Printf("miner cannot dial to the server")
 		return
 	}
 	serverConn = client
@@ -1449,8 +1574,7 @@ func main() {
 	libMin := new(LibMin)
 	server.Register(libMin)
 	// need automatic port generation
-	ip := strings.Split(outgoingAddress, ":")
-	l, e := net.Listen("tcp", ip[0]+":0")
+	l, e := net.Listen("tcp", ":0")
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
@@ -1459,18 +1583,28 @@ func main() {
 	incomingAddress = l.Addr().String()
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
-		// can not proceed if it is not register to the server
-		fmt.Printf("miner can not register itself to the server")
+		// cannot proceed if it is not register to the server
+		fmt.Printf("miner cannot register itself to the server")
 		return
 	}
+
+	//Initializing the first block
+	genesisHash, err := hex.DecodeString(minerNetSettings.GenesisBlockHash)
+	if err != nil {
+		// Only occurs on startup. Panic to prevent miner from running in bad state.
+		panic(err)
+	}
+	hash := blockartlib.Hash(genesisHash)
+	currBlock = &Block{prev: hash, len: 1}
+
+	// create genesis block
+	genesisBlockMeta := &BlockMeta{hash: hash}
+	blockTree[hash.ToString()] = genesisBlockMeta
+	headBlockMeta = genesisBlockMeta
 
 	go startHeartBeat()
 
 	go requestForMoreNodesRoutine()
 
-	go mine()
-
-	for {
-
-	}
+	mine()
 }
