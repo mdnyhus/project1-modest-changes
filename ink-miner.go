@@ -30,8 +30,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	//"crypto/x509"
-	//"encoding/pem"
 	"crypto/x509"
 )
 

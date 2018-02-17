@@ -33,17 +33,18 @@ class Canvas extends Component {
                 <div className="row">
                     <div className="col-md-6">
                         <h1>Canvas</h1>
+                        <button 
+                        className="btn btn-primary"
+                        onClick={callMinerServer.bind(this)}>Update</button>
                         <div id="canvas" style={{width: width, height: height}} className="canvas">
                             <div dangerouslySetInnerHTML={{__html:htmlShapes}} />
                         </div>
-                        <button 
-                        className="btn btn-primary"
-                        onClick={() => this.props.renderCanvas(['<path d="M50 0 L25 20 L225 200 Z" />','<path d="M250 0 L75 200 L225 200 Z" />'])}>Render</button>
+                       
                     </div>
-                    <div className="col-md-6">
+                    {/* <div className="col-md-6">
                         <h1>History</h1>
                         {historyList}
-                    </div>
+                    </div> */}
                 </div>
             </div>
         );
@@ -65,6 +66,33 @@ function appendSvgPaths(listOfSvgPaths) {
 }
 
 // need api stub
+
+function callMinerServer(){
+    console.log("calling miner server")
+    console.log(this)
+    var url = "http://localhost:8080/"
+    $.ajax({
+        url: url,
+        data: "nothing",
+        success: updateCanvas.bind(this),
+        dataType: "json",
+        crossDomain: true,
+      }).fail(function (err){
+        console.log("error")
+        console.log(err)
+      });
+
+}
+
+function updateCanvas(data, status, jqXHR){
+    //dummy 
+    var d = data
+    var xMax = d.CanvasXMax
+    var yMax = d.CanvasYMax
+    var shapes = d.SvgStrings
+
+    this.props.renderCanvas(d)
+}
 
 function matchDispatchToProps(dispatch){
     return bindActionCreators({renderCanvas: renderCanvas, changeVersion:changeVersion }, dispatch);

@@ -11,17 +11,18 @@ const initialState = {
 export default function (previousState = initialState, action) {
     switch (action.type) {
         case 'RENDER_CANVAS':
+            console.log("in reducer")
+            var data = action.payload
+            console.log(data)
             if (previousState.shapeHistory.length === 0 ){
-                console.log("I am here----")
-                console.log(action.payload)
                 var newCanvasShape = {
-                    width: 300,
-                    height: 300,
-                    shapeHistory: [action.payload],
-                    currentVersionCanvas: action.payload}
+                    width: data.CanvasXMax,
+                    height: data.CanvasYMax,
+                    shapeHistory: [data.SvgStrings],
+                    currentVersionCanvas: data.SvgStrings}
                 return newCanvasShape
             }
-            var newestShapes = action.payload;
+            var newestShapes = data.SvgStrings;
             var currentVersion = previousState.shapeHistory.length - 1;
             var shapesInCurrentVersion = previousState.shapeHistory[currentVersion];
             var numShapesInCurrentVersion = shapesInCurrentVersion.length;
