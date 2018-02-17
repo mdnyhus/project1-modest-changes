@@ -43,7 +43,6 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 
 	shape, err := convertShape(shapeType, shapeSvgString, fill, stroke)
 	if err != nil {
-		// TODO - deal with any errors convertShape may produce
 		return shapeHash, blockHash, inkRemaining, err
 	}
 
@@ -63,10 +62,10 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		ValidateNum: validateNum}
 	var reply AddShapeReply
 	if err = canvas.client.Call("LibMin.AddShapeIM", args, &reply); err != nil {
-		return hash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
+		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
-	return hash, reply.OpHash, reply.InkRemaining, reply.Error
+	return reply.OpHash, reply.BlockHash, reply.InkRemaining, reply.Error
 }
 
 // Gets SVG string from the hashed shape
