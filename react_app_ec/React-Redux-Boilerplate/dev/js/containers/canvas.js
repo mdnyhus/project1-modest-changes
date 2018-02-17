@@ -90,7 +90,10 @@ function updateCanvas(data, status, jqXHR){
     var xMax = d.CanvasXMax
     var yMax = d.CanvasYMax
     var shapes = d.SvgStrings
-
+    if (data.SvgStrings == null){
+        data.SvgStrings = [];
+    }
+    console.log("updating canvas")
     this.props.renderCanvas(d)
 }
 
