@@ -43,15 +43,15 @@ func main() {
 	fmt.Printf("\tCanvas Height: %d\n\n", settings.CanvasYMax)
 	fmt.Println("Commands:")
 	// No cirlce for now, default to path.
-	fmt.Println("\t\tAddShape [validateNum] [svgString] [fill] [stroke]")
-	fmt.Println("\t\tGetSvgString [shapeHash]")
-	fmt.Println("\t\tGetInk")
-	fmt.Println("\t\tDeleteShape [validateNum] [shapeHash]")
-	fmt.Println("\t\tGetShapes [blockHash]")
-	fmt.Println("\t\tGetGensisBlock")
-	fmt.Println("\t\tGetChildren [blockHash]")
-	fmt.Println("\t\tCloseCanvas")
-	fmt.Println("\t\tExit")
+	fmt.Println("\tAddShape [validateNum] [svgString] [fill] [stroke] [PATH | CIRCLE]")
+	fmt.Println("\tGetSvgString [shapeHash]")
+	fmt.Println("\tGetInk")
+	fmt.Println("\tDeleteShape [validateNum] [shapeHash]")
+	fmt.Println("\tGetShapes [blockHash]")
+	fmt.Println("\tGetGensisBlock")
+	fmt.Println("\tGetChildren [blockHash]")
+	fmt.Println("\tCloseCanvas")
+	fmt.Println("\tExit")
 
 	for {
 		err = nil
@@ -60,28 +60,40 @@ func main() {
 		text, _ := reader.ReadString('\n')
 		words := strings.Fields(text)
 
+		if len(words) == 0 {
+			continue
+		}
+
 		switch words[0] {
 		case "AddShape":
-			if len(words) < 6 {
+			if len(words) < 7 {
 				fmt.Println("Bad args")
 				fmt.Println("AddShapeUsage:")
-				fmt.Println("\t\tAddShape [validateNum] [svgString] [fill] [stroke]")
+				fmt.Println("\tAddShape [validateNum] [svgString] [fill] [stroke] [PATH | CIRCLE]")
 				continue
 			}
 
 			validateNum, err := strconv.Atoi(words[1])
-			svgString := strings.Join(words[2:len(words)-2], " ")
-			fill := words[len(words) - 2]
-			stroke := words[len(words) - 1]
+			svgString := strings.Join(words[2:len(words)-3], " ")
+			fill := words[len(words) - 3]
+			stroke := words[len(words) - 2]
+			shapeTypeArg := words[len(words) - 1]
 
-			if err != nil {
+			if err != nil || (shapeTypeArg != "PATH" && shapeTypeArg != "CIRCLE") {
 				fmt.Println("Bad args")
 				fmt.Println("AddShapeUsage:")
-				fmt.Println("\t\tAddShape [validateNum] [svgString] [fill] [stroke]")
+				fmt.Println("\tAddShape [validateNum] [svgString] [fill] [stroke]")
 				continue
 			}
 
-			shapeHash, blockHash, inkRemaining, err := canvas.AddShape(uint8(validateNum), blockartlib.ShapeType(blockartlib.PATH), svgString, fill, stroke)
+			var shapeType blockartlib.ShapeType
+			if shapeTypeArg == "PATH" {
+				shapeType = blockartlib.ShapeType(blockartlib.PATH)
+			} else {
+				//shapeType = blockartlib.ShapeType(blockartlib.CIRCLE)
+			}
+
+			shapeHash, blockHash, inkRemaining, err := canvas.AddShape(uint8(validateNum), shapeType, svgString, fill, stroke)
 			if err != nil {
 				fmt.Println("========== ERROR ==========")
 				fmt.Println(err)
