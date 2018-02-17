@@ -733,7 +733,6 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 		// https://stackoverflow.com/a/402019/5759077
 		// Either the circle's centre lies inside the rectangle
 		if pointInShape(Point{circle.Cx, circle.Cy}, path, canvasSettings) {
-			// TODO: have to check if the circle is completely in the rectangle, or if the rectangle is completely
 			// in the circle
 			if circle.FilledIn || path.FilledIn {
 				return true
@@ -769,8 +768,6 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 				verticeEdge1 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
 				verticeEdge2 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
 				if getLengthOfEdge(verticeEdge1) <= circle.Radius || getLengthOfEdge(verticeEdge2) <= circle.Radius {
-					// TODO: have to check if the circle is completely in the rectangle, or if the rectangle is completely
-					// in the circle
 					if circle.FilledIn || path.FilledIn {
 						return true
 					}
