@@ -606,11 +606,11 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 			for _, edge := range shape.Edges {
 				borderLength += getLengthOfEdge(edge)
 			}
-			floatInk += borderLength
 		} else if shape.IsCircle {
 			// circumference = 2 * pi * r
 			borderLength = 2 * math.Pi * shape.Radius
 		}
+		floatInk += borderLength
 	}
 	ink = uint32(floatInk)
 	return ink, nil
@@ -678,29 +678,47 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 		}
 
 		// The following cases test if a shape fully envelopes another shape.
-
-		// Test if B is a closed shape
-		if _, err := getAreaOfShape(&B); err == nil {
-			//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-			pointA := A.Edges[0].Start
-			if pointInShape(pointA, B, canvasSettings) {
-				return true
+		if A.FilledIn && B.FilledIn {
+			// Test if B is a closed shape
+			if _, err := getAreaOfShape(&B); err == nil {
+				//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+				pointA := A.Edges[0].Start
+				if pointInShape(pointA, B, canvasSettings) { // this only matters if it's filled in.
+					return true
+				}
 			}
-		}
 
-		if _, err := getAreaOfShape(&A); err == nil {
-			//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-			pointB := B.Edges[0].Start
-			if pointInShape(pointB, A, canvasSettings) {
-				return true
+			if _, err := getAreaOfShape(&A); err == nil {
+				//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+				pointB := B.Edges[0].Start
+				if pointInShape(pointB, A, canvasSettings) {
+					return true
+				}
 			}
 		}
 		//4. If not, then you can conclude that the two polygons are completely outside each other.
 		return false
 	} else if A.IsCircle && B.IsCircle {
-		//https://www.geeksforgeeks.org/check-two-given-circles-touch-intersect/
+/*		//https://www.geeksforgeeks.org/check-two-given-circles-touch-intersect/ - didn't work for encompassing circle
 		distance := math.Sqrt(math.Pow(A.Cx - B.Cx, 2) + math.Pow(A.Cy - B.Cy, 2))
-		return floatEquals(A.Radius + B.Radius, distance) || distance < A.Radius + B.Radius
+		if floatEquals(A.Radius + B.Radius, distance) || distance < A.Radius + B.Radius {
+			return true
+		}*/
+		distanceSquared := math.Pow(A.Cx - B.Cx, 2) + math.Pow(A.Cy - B.Cy, 2)
+		if math.Pow(A.Radius - B.Radius, 2) <= distanceSquared && distanceSquared <= math.Pow(A.Radius + B.Radius, 2) {
+			return true
+		}
+		if A.FilledIn && B.FilledIn {
+			// if no edges of circle intersect each other, then check if a circle completely overlaps another
+			// this only matters if A and B are both filled in
+			radiiEdge := Edge{Start:Point{A.Cx, A.Cy}, End:Point{B.Cx, B.Cy}}
+			length := getLengthOfEdge(radiiEdge)
+			if A.Radius > B.Radius {
+				return A.Radius > length + B.Radius
+			} else {
+				return B.Radius > length + A.Radius
+			}
+		}
 	} else {
 		// one of A,B is a circle and one of A,B is a path-shape
 		var circle Shape
@@ -717,19 +735,30 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 		if pointInShape(Point{circle.Cx, circle.Cy}, path, canvasSettings) {
 			return true
 		}
+
+		var distance float64
+		var A float64
+		var B float64
+		var C float64
 		// or one of the edges of the rectangle has a point in the circle
 		for _, edge := range path.Edges {
 			// get equation of the line
 			// y = mx + b
-			slope := (edge.End.Y - edge.Start.Y) / (edge.End.X - edge.End.Y) // m
-			intercept := edge.End.Y - slope * edge.End.X // b (b = y - mx)
-			// Line has form Ax + By + C = 0, y = mx + b, y - mx - b = 0, so A = -m, B = 1, C = -b
-			A := -1 * slope
-			var B float64 = 1
-			C := -1 * intercept
-
+			if edge.End.X - edge.Start.X != 0 {
+				slope := (edge.End.Y - edge.Start.Y) / (edge.End.X - edge.Start.X) // m
+				intercept := edge.End.Y - slope * edge.End.X // b (b = y - mx)
+				// Line has form Ax + By + C = 0, y = mx + b, y - mx - b = 0, so A = -m, B = 1, C = -b
+				A = -1 * slope
+				B = 1
+				C = -1 * intercept
+			} else {
+				// vertical line..
+				A = 0
+				B = 1
+				C = -1 * circle.Cy
+			}
 			// distance, with point (m,n)
-			distance := math.Abs(A * circle.Cx + B * circle.Cy + C) / math.Sqrt(math.Pow(A, 2) + math.Pow(B, 2))
+			distance = math.Abs(A * circle.Cx + B * circle.Cy + C) / math.Sqrt(math.Pow(A, 2) + math.Pow(B, 2))
 			if distance < circle.Radius {
 				// now check if any of the two vertices of the shape is closer than the radius
 				verticeEdge1 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}

@@ -2,6 +2,7 @@ package blockartlib
 
 import (
 	"testing"
+	"fmt"
 )
 
 
@@ -87,11 +88,30 @@ func TestSvgToShape(t *testing.T) {
 	}
 }
 
+func TestSvgToCircleShape(t *testing.T) {
+	shape, err := svgToCircleShape("1,2,5")
+	if err != nil {
+		fmt.Errorf("%v\n", err)
+	}
+	if !shape.IsCircle {
+		fmt.Errorf("\n")
+	}
+	if !floatEquals(shape.Cx, 1) {
+		fmt.Errorf("\n")
+	}
+	if !floatEquals(shape.Cy, 2) {
+		fmt.Errorf("\n")
+	}
+	if !floatEquals(shape.Radius, 5) {
+		fmt.Errorf("\n")
+	}
+}
+
 func TestConvertShape(t *testing.T) {
 	// TODO
 }
 
-func TestSvgIsInCanvas(t *testing.T) {
+func TestIsShapeInCanvas(t *testing.T) {
 	setUpCanvas(100, 100)
 	edges := []Edge{}
 	edges = append(edges, Edge{Start:Point{X:0, Y:0}, End:Point{X:30, Y:0}})
@@ -106,6 +126,22 @@ func TestSvgIsInCanvas(t *testing.T) {
 	shape.Edges = append(shape.Edges, Edge{Start:Point{0, -1}, End:Point{1, 2}})
 	if IsShapeInCanvas(shape) {
 		t.Errorf("edge {0,-1}->{1,2} should not be within canvas limits, is \n")
+	}
+	//circle cases
+	// fits in canvas
+	circle := Shape{IsCircle:true, Cx:5, Cy:5, Radius:2}
+	if !IsShapeInCanvas(circle) {
+		t.Errorf("Circle with center (%d,%d) and radius %d should fit in canvas", circle.Cx, circle.Cy, circle.Radius)
+	}
+	// too large, circle encompasses canvas
+	circle = Shape{IsCircle:true, Cx: 50, Cy: 50, Radius: 20000}
+	if IsShapeInCanvas(circle) {
+		t.Errorf("Circle with center (%d,%d) and radius %d should not fit in canvas", circle.Cx, circle.Cy, circle.Radius)
+	}
+	// circle encroaches one of the canvas' borders
+	circle = Shape{IsCircle:true, Cx: 95, Cy: 20, Radius: 10}
+	if IsShapeInCanvas(circle) {
+		t.Errorf("Circle with center (%d,%d) and radius %d should not fit in canvas", circle.Cx, circle.Cy, circle.Radius)
 	}
 }
 
@@ -176,6 +212,44 @@ func TestInkUsed(t *testing.T) {
 	ink, err = InkUsed(&shape)
 	if err == nil {
 		t.Errorf("Expected error when filledIn = true on self-intersecting shape \n")
+	}
+
+	// Circles - for these values just check the approximate value
+	// Case 1: No border and no fill
+	// Expect error
+	circle := Shape{IsCircle:true, Cx: 5, Cy: 5, Radius: 8, FilledIn: false, BorderColor: TRANSPARENT}
+	ink, err = InkUsed(&circle)
+	if err == nil {
+		t.Errorf("Expected error when both border and fill color is transparent")
+	}
+	// Case 2: Border, and no fill
+	circle.BorderColor = "red"
+	ink, err = InkUsed(&circle)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 50 {
+		t.Errorf("Expected 50 units of ink, received %d \n", ink)
+	}
+	// Case 3: No border, and fill
+	circle.BorderColor = "transparent"
+	circle.FilledIn = true
+	circle.FillColor = "red"
+	ink, err = InkUsed(&circle)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 201 {
+		t.Errorf("Expected 201 units of ink, received %d \n", ink)
+	}
+	// Case 4: Border, and fill
+	circle.BorderColor = "red"
+	ink, err = InkUsed(&circle)
+	if err != nil {
+		t.Errorf("Received error %v \n", err)
+	}
+	if ink != 251 {
+		t.Errorf("Expected 201 units of ink, received %d \n", ink)
 	}
 }
 
@@ -291,6 +365,137 @@ func TestShapesIntersect(t *testing.T) {
 	shape2.Edges = append(shape2.Edges, Edge{Start:Point{5,25}, End:Point{5, 40}})
 	if !ShapesIntersect(shape1, shape2, canvasT.settings) {
 		t.Errorf("Shapes %v, %v should be intersecting \n", shape1, shape2)
+	}
+
+	// Circle-circle cases:
+	// Two circles do not intersect
+	circle1 := Shape{IsCircle:true, Cx:5, Cy:5, Radius:1}
+	circle2 := Shape{IsCircle:true, Cx:10, Cy:10, Radius:1}
+	if ShapesIntersect(circle1, circle2, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", circle1, circle2)
+	}
+	// Two circles intersect
+	circle1.Cx = 8
+	circle1.Cy = 10
+	circle1.Radius = 3
+	circle2.Radius = 2
+	if !ShapesIntersect(circle1, circle2, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", circle1, circle2)
+	}
+	// A circle encompasses another circle - transparent fill
+	circle1.FilledIn = false
+	circle2.FilledIn = false
+	circle1.Cx = 10
+	circle1.Cy = 10
+	circle1.Radius = 10
+	circle2.Cx = 5
+	circle2.Cy = 5
+	circle2.Radius = 1
+	if ShapesIntersect(circle1, circle2, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", circle1, circle2)
+	}
+	// A circle encompasses another circle - one colored, one transparent
+	circle1.FilledIn = true
+	circle2.FilledIn = false
+	if ShapesIntersect(circle1, circle2, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", circle1, circle2)
+	}
+	// A circle encompasses another circle - both colored fill
+	circle1.FilledIn = true
+	circle2.FilledIn = true
+	if !ShapesIntersect(circle1, circle2, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", circle1, circle2)
+	}
+	// Circle-path cases:
+	// Circle and path do not intersect
+	fmt.Println("Test case 1")
+	circle1.Cx = 5
+	circle1.Cy = 5
+	circle1.Radius = 3
+	shape := Shape{IsCircle:false, Edges:[]Edge{
+		Edge{Start:Point{X:50, Y:50}, End:Point{X:75, Y:50}}}}
+	if ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", shape, circle1)
+	}
+	// Circle and path do intersect
+	fmt.Println("Test case 2")
+	shape.Edges = []Edge{Edge{Start:Point{2,5}, End:Point{5,5}}}
+	if !ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", shape, circle1)
+	}
+	// Path (open) is entirely within circle (transparent fill)
+	fmt.Println("Test case 3")
+	circle1.FilledIn = false
+	circle1.Radius = 5
+	shape.Edges = append(shape.Edges, Edge{Start:Point{5,5}, End:Point{6,6}})
+	if ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", shape, circle1)
+	}
+	// Path(open) is entirely within circle (non-transparent fill)
+	fmt.Println("Test case 4")
+	circle1.FilledIn = true
+	if !ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", shape, circle1)
+	}
+	// Circle entirely within Path (this case a rectangle) (transparent fill)
+	fmt.Println("Test case 5")
+	shape.Edges = []Edge{Edge{Start:Point{0,0}, End:Point{50,0}},
+		Edge{Start:Point{50,0}, End:Point{50,50}},
+		Edge{Start:Point{50,50}, End:Point{0,50}},
+		Edge{Start:Point{0,50}, End:Point{0,0}}}
+	shape.FilledIn = false
+	circle1.FilledIn = false
+	if ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", shape, circle1)
+	}
+	// Circle entirely within rectangle (non-transparent fills)
+	fmt.Println("Test case 6")
+	shape.FilledIn = true
+	circle1.FilledIn = true
+	if !ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", shape, circle1)
+	}
+	// Rectangle entirely within circle (transparent fill)
+	fmt.Println("Test case 7")
+	circle1.FilledIn = false
+	shape.FilledIn = false
+	circle1.Cx = 50
+	circle1.Cy = 50
+	circle1.Radius = 30
+	shape.Edges = []Edge{Edge{Start:Point{40,40}, End:Point{40,42}},
+		Edge{Start:Point{40,42}, End:Point{42,42}},
+		Edge{Start:Point{42,42}, End:Point{42,40}},
+		Edge{Start:Point{42,40}, End:Point{40,40}}}
+	if ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", shape, circle1)
+	}
+	// Rectangle entirely within circle (non-transparent fills)
+	fmt.Println("Test case 8")
+	shape.FilledIn = true
+	circle1.FilledIn = true
+	if !ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", shape, circle1)
+	}
+	// Rectangle partially in circle (transparent fill)
+	fmt.Println("Test case 9")
+	circle1.Cx = 10
+	circle1.Cy = 10
+	circle1.Radius = 3
+	shape.Edges = []Edge{Edge{Start:Point{5,10}, End:Point{9,10}},
+		Edge{Start:Point{9,10}, End:Point{9,15}},
+		Edge{Start:Point{9,15}, End:Point{5,15}},
+		Edge{Start:Point{5,15}, End:Point{5,10}}}
+	circle1.FilledIn = false
+	shape.FilledIn = false
+	if ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should not be intersecting \n", shape, circle1)
+	}
+	// Rectangle partially in circle (non-transparent fills)
+	fmt.Println("Test case 10")
+	circle1.FilledIn = true
+	shape.FilledIn = true
+	if !ShapesIntersect(shape, circle1, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", shape, circle1)
 	}
 }
 
