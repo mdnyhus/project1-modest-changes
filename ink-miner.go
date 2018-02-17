@@ -864,8 +864,6 @@ func hashString(s string) []byte {
 	return hasher.Sum(nil)[:]
 }
 
-func keysEqual(
-
 // Verifies that hash meets POW requirements specified by server.
 // @param hash string: Hash of block to be verified.
 // @return bool: True iff valid.
