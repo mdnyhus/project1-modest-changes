@@ -233,7 +233,9 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 // @param reply *bool: Bool indicating success of RPC.
 // @return error: Any errors produced during new block processing.
 func (m *MinMin) NotifyNewNeighbour(addr *net.Addr, reply *bool) error {
+	neighboursLock.Lock()
 	inkMiner := addNeighbour(*addr)
+	neighboursLock.Unlock()
 	*reply = false
 	if inkMiner != nil {
 		*reply = true
@@ -337,8 +339,10 @@ func (l *LibMin) AddShapeIM(args *blockartlib.AddShapeArgs, reply *blockartlib.A
 	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
 		// clean up channels
 		close(returnChan)
+		opChansLock.Lock()
 		delete(opChans, key)
 		close(opChan)
+		opChansLock.Unlock()
 	}(opChan, returnChan, opChansKey)
 
 	resultErr := <-returnChan
@@ -466,8 +470,10 @@ func (l *LibMin) DeleteShapeIM(args *blockartlib.DeleteShapeArgs, reply *blockar
 	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
 		// clean up channels
 		close(returnChan)
+		opChansLock.Lock()
 		delete(opChans, key)
 		close(opChan)
+		opChansLock.Unlock()
 	}(opChan, returnChan, opChansKey)
 
 	resultErr := <-returnChan
@@ -583,7 +589,6 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta Op
 						returnChan <- nil
 						return
 					}
-
 					break chainCrawl
 				}
 			}
@@ -796,6 +801,7 @@ func crawlChainHelperGetBlock(hash blockartlib.Hash) (blockMeta *BlockMeta) {
 	}
 
 	// block is not stored locally, search externally.
+	neighboursLock.Lock()
 	for _, n := range neighbours {
 		args := hash.ToString()
 		err := n.conn.Call("MinMin.RequestBlock", &args, blockMeta)
@@ -806,6 +812,7 @@ func crawlChainHelperGetBlock(hash blockartlib.Hash) (blockMeta *BlockMeta) {
 		// return the block
 		return blockMeta
 	}
+	neighboursLock.Unlock()
 
 	// Block not found.
 	return nil
@@ -1112,7 +1119,7 @@ func floodOp(opMeta OpMeta) {
 
 	replies := 0
 	replyChan := make(chan *rpc.Call, 1)
-
+	
 	for _, n := range neighbours {
 		var reply bool
 		_ = n.conn.Go("NotifyNewOp", opMeta, &reply, replyChan)
@@ -1353,6 +1360,7 @@ func inkAvail(miner ecdsa.PublicKey, blockMeta *BlockMeta) (ink uint32) {
 }
 
 // Counts the amount of ink currently available to this miner starting at currBlock
+// ASSUME: you have acquired blockLock
 // @return ink uint32: ink currently available to this miner, in pixels
 func inkAvailCurr() (ink uint32) {
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
@@ -1452,7 +1460,9 @@ func getNodes() error {
 			inkMiner.conn.Call("MinMin.NotifyNewNeighbour", &address, &reply)
 			if !reply {
 				// remove neighbour from map
+				neighboursLock.Lock()
 				delete(neighbours, address)
+				neighboursLock.Unlock()
 			}
 		}
 	}
@@ -1589,13 +1599,13 @@ func mine() {
 	}
 }
 
-// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`"
+// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`" <blockartlib port>
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 3
+	numArgs := 4
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1604,11 +1614,15 @@ func main() {
 		} else {
 			fmt.Printf("too many arguments; expected %d, received %d\n", numArgs, len(args))
 		}
+		fmt.Println("Usage:")
+		fmt.Println("\tgo run ink-miner.go [server ip:port] [pubKey] [privKey] [blockartlib port]")
+
 		// can't proceed without correct number of arguments
 		return
 	}
 
 	outgoingAddress = args[0]
+	blockartlibPort := args[3]
 
 	pub, err := hex.DecodeString(args[1])
 	if err != nil {
@@ -1662,7 +1676,7 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", getOutboundIP()+":0")
+	l, e := net.Listen("tcp", "127.0.0.1:" + blockartlibPort)
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
@@ -1708,14 +1722,3 @@ func main() {
 	mine()
 }
 
-// Copied from https://stackoverflow.com/a/42017521/5759077
-func getOutboundIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
-	localAddr := conn.LocalAddr().String()
-	idx := strings.LastIndex(localAddr, ":")
-	return localAddr[0:idx]
-}
