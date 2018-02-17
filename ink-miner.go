@@ -407,9 +407,15 @@ func (l *LibMin) GetSvgStringIM(args *blockartlib.GetSvgStringArgs, reply *block
 	}
 
 	// Return html-valid tag, of the form:
-	// <path d=[svgString] stroke=[stroke] fill=[fill]/>
-	reply.SvgString = fmt.Sprintf("<path d=\"%s\" stroke=\"%s\" fill=\"%s\"/>", shapeMeta.Shape.Svg, stroke, fill)
-	reply.Error = nil
+	if !shapeMeta.Shape.IsCircle {
+		// <path d=[svgString] stroke=[stroke] fill=[fill]/>
+		reply.SvgString = fmt.Sprintf("<path d=\"%s\" stroke=\"%s\" fill=\"%s\"/>", shapeMeta.Shape.Svg, stroke, fill)
+		reply.Error = nil
+	} else {
+		reply.SvgString = fmt.Sprintf("<circle cx=\"%d\" cy=\"%d\" r=\"%d\" stroke=\"%s\" fill=\"%s\"/>",
+			shapeMeta.Shape.Cx, shapeMeta.Shape.Cy, shapeMeta.Shape.Radius, stroke, fill)
+		reply.Error = nil
+	}
 	return nil
 }
 
@@ -503,8 +509,10 @@ func (l *LibMin) GetShapesIM(args *string, reply *blockartlib.GetShapesReply) (e
 
 	for _, opMeta := range blockMeta.block.ops {
 		// add op's hash to reply.ShapeHashes
-		hash := opMeta.hash.ToString()
-		reply.ShapeHashes = append(reply.ShapeHashes, hash)
+		if opMeta.op.shapeMeta != nil {
+			hash := opMeta.op.shapeMeta.Hash
+			reply.ShapeHashes = append(reply.ShapeHashes, hash)
+		}
 	}
 
 	reply.Error = nil
@@ -1117,7 +1125,7 @@ func floodOp(opMeta OpMeta) {
 
 	replies := 0
 	replyChan := make(chan *rpc.Call, 1)
-	
+
 	for _, n := range neighbours {
 		var reply bool
 		_ = n.conn.Go("NotifyNewOp", opMeta, &reply, replyChan)

@@ -24,10 +24,10 @@ type ShapeType int
 const (
 	// Path shape.
 	PATH        ShapeType = 1
+	// Circle shape (extra credit).
+	CIRCLE		ShapeType = 2
 	EPSILON     float64   = 0.000001
 	TRANSPARENT string    = "transparent"
-	// Circle shape (extra credit).
-	// CIRCLE
 )
 
 // Settings for a canvas in BlockArt.
@@ -92,6 +92,11 @@ type Shape struct {
 	FillColor   string //todo: hex?
 	BorderColor string //todo: hex?
 	Ink         uint32 //todo: are there different ink levels for different colors?
+	// ---- Circle properties, only access these if IsCircle is true!
+	IsCircle	bool // zero value of a boolean is false
+	Radius		float64
+	Cx			float64
+	Cy			float64
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
