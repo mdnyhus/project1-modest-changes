@@ -31,8 +31,6 @@ import (
 	"sync"
 	"time"
 	"crypto/x509"
-	"net/http"
-	"io/ioutil"
 )
 
 // Static
