@@ -12,14 +12,13 @@ package main
 // this art-app.go file
 import (
 	"./blockartlib"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"crypto/x509"
+	"encoding/hex"
 )
 
 var canvas blockartlib.Canvas
@@ -193,13 +192,25 @@ func pollTree() {
 }
 
 func main() {
-	// TODO - make it take arguments
-	minerAddr := "127.0.0.1:8080"
-	keyPointer, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	privKey := *keyPointer
+	if len(os.Args) != 3 {
+		fmt.Println("Usage: go run html-app.go [minerAddr ip:port] [privKey]")
+		os.Exit(1)
+	}
+
+	minerAddr := os.Args[1]
+	privKeyArg := os.Args[2]
+
+	privKeyStr, err := hex.DecodeString(privKeyArg)
+	if err != nil {
+		panic(err)
+	}
+	privKeyParsed, err := x509.ParseECPrivateKey(privKeyStr)
+	if err != nil {
+		panic(err)
+	}
+	privKey := *privKeyParsed
 
 	// Open a canvas.
-	var err error
 	canvas, settings, err = blockartlib.OpenCanvas(minerAddr, privKey)
 	if checkError(err) != nil {
 		return

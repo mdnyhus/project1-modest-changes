@@ -55,6 +55,7 @@ var neighboursLock = &sync.Mutex{}
 
 // Network
 var blockTree = make(map[string]*BlockMeta)
+var blockTreeLock = &sync.Mutex{}
 var serverConn *rpc.Client
 var outgoingAddress string
 var incomingAddress string
@@ -196,7 +197,6 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 			for _, oldOp := range oldOps {
 				// go through ops sequentially for simplicity
 				// TODO - if runtime is really bad, could make it parallel
-				// FIXME
 				pseudoCurrBlockMeta := BlockMeta{block: *currBlock}
 				go verifyOp(oldOp, &pseudoCurrBlockMeta, -1, verificationChan)
 				err := <-verificationChan
@@ -216,11 +216,13 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	}
 
 	// notify all opChans
+	opChansLock.Lock()
 	for _, opChan := range opChans {
 		go func() {
 			opChan <- blockMeta
 		}()
 	}
+	opChansLock.Unlock()
 
 	floodBlock(*blockMeta)
 
@@ -233,7 +235,9 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 // @param reply *bool: Bool indicating success of RPC.
 // @return error: Any errors produced during new block processing.
 func (m *MinMin) NotifyNewNeighbour(addr *net.Addr, reply *bool) error {
+	neighboursLock.Lock()
 	inkMiner := addNeighbour(*addr)
+	neighboursLock.Unlock()
 	*reply = false
 	if inkMiner != nil {
 		*reply = true
@@ -272,7 +276,6 @@ func (l *LibMin) OpenCanvasIM(args *blockartlib.OpenCanvasArgs, reply *blockartl
 	// Can't compare ecdsa keys directly, so instead sign and verify
 	// choose hash arbitrarily
 
-	// TODO: @Kamil - add function to compare keys and remove code below
 	hash := []byte(incomingAddress + outgoingAddress)
 
 	// sign with miner's private key, verify with args' public key
@@ -338,8 +341,10 @@ func (l *LibMin) AddShapeIM(args *blockartlib.AddShapeArgs, reply *blockartlib.A
 	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
 		// clean up channels
 		close(returnChan)
+		opChansLock.Lock()
 		delete(opChans, key)
 		close(opChan)
+		opChansLock.Unlock()
 	}(opChan, returnChan, opChansKey)
 
 	resultErr := <-returnChan
@@ -349,6 +354,17 @@ func (l *LibMin) AddShapeIM(args *blockartlib.AddShapeArgs, reply *blockartlib.A
 	}
 
 	reply.OpHash = hash.ToString()
+
+	// find block where this was added
+	_, blockMeta := findOpMeta(hash.ToString())
+	if blockMeta == nil {
+		// should never happen; just return an error
+		reply.Error = blockartlib.DisconnectedError("")
+		return nil
+	}
+
+	reply.BlockHash = blockMeta.hash.ToString()
+
 	// Get ink
 	var inkArgs int
 	return l.GetInkIM(inkArgs, &reply.InkRemaining)
@@ -365,7 +381,7 @@ func (l *LibMin) GetSvgStringIM(args *blockartlib.GetSvgStringArgs, reply *block
 	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 	// do not search externally; assume that any external blocks will get
 	// flooded to this miner soon.
-	opMeta := findOpMeta(args.OpHash)
+	opMeta, _ := findOpMeta(args.OpHash)
 	if opMeta == nil {
 		// shape does not exist, return InvalidShapeHashError
 		reply.Error = blockartlib.InvalidShapeHashError(args.OpHash)
@@ -462,8 +478,10 @@ func (l *LibMin) DeleteShapeIM(args *blockartlib.DeleteShapeArgs, reply *blockar
 	defer func(opChan chan *BlockMeta, returnChan chan error, key string) {
 		// clean up channels
 		close(returnChan)
+		opChansLock.Lock()
 		delete(opChans, key)
 		close(opChan)
+		opChansLock.Unlock()
 	}(opChan, returnChan, opChansKey)
 
 	resultErr := <-returnChan
@@ -495,10 +513,7 @@ func (l *LibMin) GetShapesIM(args *string, reply *blockartlib.GetShapesReply) (e
 
 	for _, opMeta := range blockMeta.block.ops {
 		// add op's hash to reply.ShapeHashes
-		hash := opMeta.op.deleteShapeHash
-		if opMeta.op.shapeMeta != nil {
-			hash = opMeta.op.shapeMeta.Hash
-		}
+		hash := opMeta.hash.ToString()
 		reply.ShapeHashes = append(reply.ShapeHashes, hash)
 	}
 
@@ -534,6 +549,8 @@ func (l *LibMin) GetChildrenIM(args *string, reply *blockartlib.GetChildrenReply
 	}
 
 	// If it exists, then just search for children whose parent is the passed BlockHash
+	blockTreeLock.Lock()
+	defer blockTreeLock.Unlock()
 	for hash, blockMeta := range blockTree {
 		if blockMeta.block.prev.ToString() == *args {
 			reply.BlockHashes = append(reply.BlockHashes, hash)
@@ -580,7 +597,6 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta Op
 						returnChan <- nil
 						return
 					}
-
 					break chainCrawl
 				}
 			}
@@ -647,21 +663,23 @@ func blocksEqual(block1 Block, block2 Block) bool {
 // Searches for an opMeta in the set of local blocks with the given hash.
 // @param opHash string: hash of opMeta that is being searched for
 // @return shape: found op whose hash matches opHash; nil if it does not exist
-func findOpMeta(opHash string) (opMeta *OpMeta) {
+func findOpMeta(opHash string) (*OpMeta, *BlockMeta) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	blockTreeLock.Lock()
+	defer blockTreeLock.Unlock()
 	for _, blockMeta := range blockTree {
 		block := blockMeta.block
 		// search through the block's ops
 		for _, opMeta := range block.ops {
 			if opMeta.hash.ToString() == opHash {
 				// opMeta was found
-				return &opMeta
+				return &opMeta, blockMeta
 			}
 		}
 	}
 
 	// opMeta was not found
-	return nil
+	return nil, nil
 }
 
 // Searches for a shapeMeta with the given hash in the set of add ops in local blocks.
@@ -670,6 +688,8 @@ func findOpMeta(opHash string) (opMeta *OpMeta) {
 //                    exist
 func findShapeMeta(shapeHash string) (shapeMeta *blockartlib.ShapeMeta) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	blockTreeLock.Lock()
+	defer blockTreeLock.Unlock()
 	for _, blockMeta := range blockTree {
 		block := blockMeta.block
 		// search through the block's ops
@@ -747,7 +767,9 @@ func crawlChain(blockMeta *BlockMeta, fn func(*BlockMeta, interface{}, interface
 			}
 
 			// Block is valid, so add it to the map.
+			blockTreeLock.Lock()
 			blockTree[blockMeta.hash.ToString()] = blockMeta
+			blockTreeLock.Unlock()
 		}
 	}
 
@@ -787,6 +809,7 @@ func crawlChainHelperGetBlock(hash blockartlib.Hash) (blockMeta *BlockMeta) {
 	}
 
 	// block is not stored locally, search externally.
+	neighboursLock.Lock()
 	for _, n := range neighbours {
 		args := hash.ToString()
 		err := n.conn.Call("MinMin.RequestBlock", &args, blockMeta)
@@ -797,6 +820,7 @@ func crawlChainHelperGetBlock(hash blockartlib.Hash) (blockMeta *BlockMeta) {
 		// return the block
 		return blockMeta
 	}
+	neighboursLock.Unlock()
 
 	// Block not found.
 	return nil
@@ -1344,6 +1368,7 @@ func inkAvail(miner ecdsa.PublicKey, blockMeta *BlockMeta) (ink uint32) {
 }
 
 // Counts the amount of ink currently available to this miner starting at currBlock
+// ASSUME: you have acquired blockLock
 // @return ink uint32: ink currently available to this miner, in pixels
 func inkAvailCurr() (ink uint32) {
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
@@ -1425,7 +1450,6 @@ func startHeartBeat() error {
 }
 
 /*
-	TODO: checking errors -> can we see what errors the server returns
 	Request nodes from the server, will add a neighbouring ink miner , or throw a disconnected error
 	@return: Server disconnected errors for rpc failures
 */
@@ -1433,7 +1457,7 @@ func getNodes() error {
 	var newNeighbourAddresses []net.Addr
 	clientErr := serverConn.Call("RServer.GetNodes", &publicKey, &newNeighbourAddresses)
 	if clientErr != nil {
-		return ServerConnectionError("get nodes failure")
+		return ServerConnectionError("")
 	}
 
 	neighboursLock.Lock()
@@ -1444,7 +1468,9 @@ func getNodes() error {
 			inkMiner.conn.Call("MinMin.NotifyNewNeighbour", &address, &reply)
 			if !reply {
 				// remove neighbour from map
+				neighboursLock.Lock()
 				delete(neighbours, address)
+				neighboursLock.Unlock()
 			}
 		}
 	}
@@ -1578,18 +1604,16 @@ func mine() {
 		blockLock.Unlock()
 
 		time.Sleep(time.Second)
-
-		//TODO breaks heartbeat
 	}
 }
 
-// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`"
+// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`" <blockartlib port>
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 3
+	numArgs := 4
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1598,11 +1622,15 @@ func main() {
 		} else {
 			fmt.Printf("too many arguments; expected %d, received %d\n", numArgs, len(args))
 		}
+		fmt.Println("Usage:")
+		fmt.Println("\tgo run ink-miner.go [server ip:port] [pubKey] [privKey] [blockartlib port]")
+
 		// can't proceed without correct number of arguments
 		return
 	}
 
 	outgoingAddress = args[0]
+	blockartlibPort := args[3]
 
 	pub, err := hex.DecodeString(args[1])
 	if err != nil {
@@ -1656,7 +1684,7 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", getOutboundIP()+":0")
+	l, e := net.Listen("tcp", "127.0.0.1:" + blockartlibPort)
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
@@ -1689,7 +1717,9 @@ func main() {
 
 	// create genesis block
 	genesisBlockMeta := &BlockMeta{hash: hash}
+	blockTreeLock.Lock()
 	blockTree[hash.ToString()] = genesisBlockMeta
+	blockTreeLock.Unlock()
 
 	headBlockMeta = genesisBlockMeta
 
@@ -1700,29 +1730,3 @@ func main() {
 	mine()
 }
 
-// Copied from https://stackoverflow.com/a/42017521/5759077
-/*
-func getOutboundIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
-	localAddr := conn.LocalAddr().String()
-	idx := strings.LastIndex(localAddr, ":")
-	return localAddr[0:idx]
-}
-*/
-
-func getOutboundIP() string {
-	resp, err := http.Get("http://myexternalip.com/raw")
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
-	return string(body)
-}
