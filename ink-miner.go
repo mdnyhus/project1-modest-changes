@@ -53,6 +53,7 @@ var neighboursLock = &sync.Mutex{}
 
 // Network
 var blockTree = make(map[string]*BlockMeta)
+var blockTreeLock = &sync.Mutex{}
 var serverConn *rpc.Client
 var outgoingAddress string
 var incomingAddress string
@@ -213,11 +214,13 @@ func (m *MinMin) NotifyNewBlock(blockMeta *BlockMeta, reply *bool) error {
 	}
 
 	// notify all opChans
+	opChansLock.Lock()
 	for _, opChan := range opChans {
 		go func() {
 			opChan <- blockMeta
 		}()
 	}
+	opChansLock.Unlock()
 
 	floodBlock(*blockMeta)
 
@@ -532,6 +535,8 @@ func (l *LibMin) GetChildrenIM(args *string, reply *blockartlib.GetChildrenReply
 	}
 
 	// If it exists, then just search for children whose parent is the passed BlockHash
+	blockTreeLock.Lock()
+	defer blockTreeLock.Unlock()
 	for hash, blockMeta := range blockTree {
 		if blockMeta.block.prev.ToString() == *args {
 			reply.BlockHashes = append(reply.BlockHashes, hash)
@@ -647,6 +652,8 @@ func blocksEqual(block1 Block, block2 Block) bool {
 // @return shape: found op whose hash matches opHash; nil if it does not exist
 func findOpMeta(opHash string) (*OpMeta, *BlockMeta) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	blockTreeLock.Lock()
+	defer blockTreeLock.Unlock()
 	for _, blockMeta := range blockTree {
 		block := blockMeta.block
 		// search through the block's ops
@@ -668,6 +675,8 @@ func findOpMeta(opHash string) (*OpMeta, *BlockMeta) {
 //                    exist
 func findShapeMeta(shapeHash string) (shapeMeta *blockartlib.ShapeMeta) {
 	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	blockTreeLock.Lock()
+	defer blockTreeLock.Unlock()
 	for _, blockMeta := range blockTree {
 		block := blockMeta.block
 		// search through the block's ops
@@ -745,7 +754,9 @@ func crawlChain(blockMeta *BlockMeta, fn func(*BlockMeta, interface{}, interface
 			}
 
 			// Block is valid, so add it to the map.
+			blockTreeLock.Lock()
 			blockTree[blockMeta.hash.ToString()] = blockMeta
+			blockTreeLock.Unlock()
 		}
 	}
 
@@ -1684,7 +1695,9 @@ func main() {
 
 	// create genesis block
 	genesisBlockMeta := &BlockMeta{hash: hash}
+	blockTreeLock.Lock()
 	blockTree[hash.ToString()] = genesisBlockMeta
+	blockTreeLock.Unlock()
 
 	headBlockMeta = genesisBlockMeta
 
