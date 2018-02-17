@@ -79,12 +79,15 @@ func main() {
 
 	// wait to get 100 ink
 	var ink uint32
+	iterations := 0
 	for ink < uint32(49) {
 		ink, err = canvas.GetInk()
 		if err != nil {
 			fmt.Println(err)
 		}
 		fmt.Println(ink)
+		fmt.Println(iterations)
+		iterations++
 		time.Sleep(1000 * time.Millisecond)
 	}
 
@@ -96,7 +99,7 @@ func main() {
 	// fmt.Println("DELETE SHAPE DONE:")
 	// fmt.Println(err)
 	// fmt.Println(inkRemaining)
-
+	fmt.Println("adding the shape")
 	shapeHash, _, inkRemaining, err := canvas.AddShape(1, blockartlib.PATH, "M 0 0 H 5 V 5 h -5 Z", "red", "blue")
 	fmt.Println(shapeHash)
 	fmt.Println(inkRemaining)
@@ -109,4 +112,5 @@ func main() {
 	fmt.Println(shapeHash)
 	fmt.Println(inkRemaining)
 	fmt.Println(err)
+	fmt.Println("Congrats you are done... shapes are added")
 }

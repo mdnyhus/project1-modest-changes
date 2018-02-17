@@ -589,7 +589,6 @@ func opReceiveNewBlocks(opChan chan *BlockMeta, returnChan chan error, opMeta Op
 						returnChan <- nil
 						return
 					}
-
 					break chainCrawl
 				}
 			}
@@ -1121,12 +1120,11 @@ func floodOp(opMeta OpMeta) {
 	replies := 0
 	replyChan := make(chan *rpc.Call, 1)
 
-	neighboursLock.Lock()
+
 	for _, n := range neighbours {
 		var reply bool
 		_ = n.conn.Go("NotifyNewOp", opMeta, &reply, replyChan)
 	}
-	neighboursLock.Unlock()
 
 	for replies != len(neighbours) {
 		select {
