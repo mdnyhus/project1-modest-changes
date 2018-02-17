@@ -248,6 +248,9 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 // - (cx, cy) = coordinate of the centre of the circle
 // - r = radius of circle
 func svgToCircleShape(svg string) (*Shape, error) {
+	if IsSvgTooLong(svg) {
+		return nil, ShapeSvgStringTooLongError(svg)
+	}
 	shape := Shape{}
 	shape.IsCircle = true
 	// Remove all whitespace in string (just to be careful)
@@ -268,6 +271,9 @@ func svgToCircleShape(svg string) (*Shape, error) {
 	shape.Cy = cy
 	r, err := strconv.ParseFloat(svgParts[2], 64)
 	shape.Radius = r
+	if !IsShapeInCanvas(shape) {
+		return nil, InvalidShapeSvgStringError(svg)
+	}
 	return &shape, nil
 }
 

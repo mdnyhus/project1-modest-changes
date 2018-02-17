@@ -5,8 +5,6 @@ import (
 	"fmt"
 )
 
-
-
 func setUpCanvas(xMax uint32, yMax uint32) {
 	canvasT = &CanvasInstance{}
 	canvasS := CanvasSettings{CanvasXMax:xMax, CanvasYMax:yMax}
@@ -92,6 +90,7 @@ func TestSvgToCircleShape(t *testing.T) {
 	shape, err := svgToCircleShape("1,2,5")
 	if err != nil {
 		fmt.Errorf("%v\n", err)
+		return
 	}
 	if !shape.IsCircle {
 		fmt.Errorf("\n")
