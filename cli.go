@@ -62,7 +62,7 @@ func main() {
 
 		switch words[0] {
 		case "AddShape":
-			if len(words) != 5 {
+			if len(words) < 6 {
 				fmt.Println("Bad args")
 				fmt.Println("AddShapeUsage:")
 				fmt.Println("\t\tAddShape [validateNum] [svgString] [fill] [stroke]")
@@ -70,9 +70,9 @@ func main() {
 			}
 
 			validateNum, err := strconv.Atoi(words[1])
-			svgString := words[2]
-			fill := words[3]
-			stroke := words[4]
+			svgString := strings.Join(words[2:len(words)-2], " ")
+			fill := words[len(words) - 2]
+			stroke := words[len(words) - 1]
 
 			if err != nil {
 				fmt.Println("Bad args")
@@ -91,7 +91,7 @@ func main() {
 
 			fmt.Printf("shapeHash: %s\n", shapeHash)
 			fmt.Printf("blockHash: %s\n", blockHash)
-			fmt.Print("inkRemaining: %d\n", inkRemaining)
+			fmt.Printf("inkRemaining: %d\n", inkRemaining)
 		case "GetSvgString":
 			if len(words) != 2 {
 				fmt.Println("Bad args")
