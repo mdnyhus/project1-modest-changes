@@ -420,12 +420,9 @@ func (l *LibMin) GetSvgStringIM(args *blockartlib.GetSvgStringArgs, reply *block
 // @param reply *uint32: amount of remaining ink, in pixels
 // @param err error: Any errors produced
 func (l *LibMin) GetInkIM(_unused int, reply *uint32) (err error) {
-	fmt.Println("GetInkIM")
 	// acquire currBlock's lock
 	blockLock.Lock()
 	defer blockLock.Unlock()
-
-	fmt.Println("a")
 
 	*reply = inkAvailCurr()
 	return nil
@@ -1152,12 +1149,10 @@ func floodBlock(blockMeta BlockMeta) {
 	replies := 0
 	replyChan := make(chan *rpc.Call, 1)
 
-	// neighboursLock.Lock()
 	for _, n := range neighbours {
 		var reply bool
 		_ = n.conn.Go("NotifyNewBlock", blockMeta, &reply, replyChan)
 	}
-	// neighboursLock.Unlock()
 
 	for replies != len(neighbours) {
 		select {
@@ -1371,7 +1366,6 @@ func inkAvail(miner ecdsa.PublicKey, blockMeta *BlockMeta) (ink uint32) {
 // ASSUME: you have acquired blockLock
 // @return ink uint32: ink currently available to this miner, in pixels
 func inkAvailCurr() (ink uint32) {
-	fmt.Println("b")
 	// the crawl by default does all the work we need, so no special helper/args/reply is required
 	args := &inkAvailCrawlArgs{miner: publicKey}
 	var reply inkAvailCrawlReply
@@ -1402,15 +1396,11 @@ func inkAvailCurr() (ink uint32) {
 		}
 	}
 
-	fmt.Println("1")
-
 	// second, go through the rest of the chain
 	if err := crawlChain(headBlockMeta, inkAvailCrawlHelper, args, &reply); err != nil {
 		// error while searching; just return 0
 		return 0
 	}
-
-	fmt.Println("2")
 
 	return reply.ink
 }
