@@ -1682,7 +1682,7 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", "127.0.0.1:" + blockartlibPort)
+	l, e := net.Listen("tcp", "0.0.0.0:" + blockartlibPort)
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
