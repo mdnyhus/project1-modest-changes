@@ -90,7 +90,7 @@ func main() {
 			if shapeTypeArg == "PATH" {
 				shapeType = blockartlib.ShapeType(blockartlib.PATH)
 			} else {
-				//shapeType = blockartlib.ShapeType(blockartlib.CIRCLE)
+				shapeType = blockartlib.ShapeType(blockartlib.CIRCLE)
 			}
 
 			shapeHash, blockHash, inkRemaining, err := canvas.AddShape(uint8(validateNum), shapeType, svgString, fill, stroke)
