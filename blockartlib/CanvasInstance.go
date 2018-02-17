@@ -678,7 +678,7 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 		}
 
 		// The following cases test if a shape fully envelopes another shape.
-		if A.FilledIn && B.FilledIn {
+		if A.FilledIn || B.FilledIn {
 			// Test if B is a closed shape
 			if _, err := getAreaOfShape(&B); err == nil {
 				//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
@@ -708,7 +708,7 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 		if math.Pow(A.Radius - B.Radius, 2) <= distanceSquared && distanceSquared <= math.Pow(A.Radius + B.Radius, 2) {
 			return true
 		}
-		if A.FilledIn && B.FilledIn {
+		if A.FilledIn || B.FilledIn {
 			// if no edges of circle intersect each other, then check if a circle completely overlaps another
 			// this only matters if A and B are both filled in
 			radiiEdge := Edge{Start:Point{A.Cx, A.Cy}, End:Point{B.Cx, B.Cy}}
@@ -733,7 +733,12 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 		// https://stackoverflow.com/a/402019/5759077
 		// Either the circle's centre lies inside the rectangle
 		if pointInShape(Point{circle.Cx, circle.Cy}, path, canvasSettings) {
-			return true
+			// TODO: have to check if the circle is completely in the rectangle, or if the rectangle is completely
+			// in the circle
+			if circle.FilledIn || path.FilledIn {
+				return true
+			}
+			return !checkSurroundsCircleShape(circle, path)
 		}
 
 		var distance float64
@@ -764,10 +769,59 @@ func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
 				verticeEdge1 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
 				verticeEdge2 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
 				if getLengthOfEdge(verticeEdge1) <= circle.Radius || getLengthOfEdge(verticeEdge2) <= circle.Radius {
-					return true
+					// TODO: have to check if the circle is completely in the rectangle, or if the rectangle is completely
+					// in the circle
+					if circle.FilledIn || path.FilledIn {
+						return true
+					}
+					return !checkSurroundsCircleShape(circle, path)
 				}
 			}
 		}
+	}
+	return false
+}
+
+func checkSurroundsCircleShape(circle Shape, other Shape) bool {
+	// check if every vertex is inside the circle
+	inCircle := true
+	var length float64
+	for _, edge := range other.Edges {
+		length = getLengthOfEdge(Edge{Start:edge.Start, End:Point{circle.Cx, circle.Cy}})
+		if length > circle.Radius {
+			inCircle = false
+			break
+		}
+		length = getLengthOfEdge(Edge{Start:edge.End, End:Point{X: circle.Cx, Y:circle.Cy}})
+		if length > circle.Radius {
+			inCircle = false
+			break
+		}
+	}
+	if inCircle {
+		return true
+	}
+	// check if the shapes is actually closed
+	_, err := getAreaOfShape(&other)
+	if err != nil {
+		return false
+	}
+	inShape := true
+	// check if radius is shorter than the length of the edge from the center of circle to each vertex
+	for _, edge := range other.Edges {
+		length = getLengthOfEdge(Edge{Start:edge.Start, End:Point{circle.Cx, circle.Cy}})
+		if length < circle.Radius {
+			inCircle = false
+			break
+		}
+		length = getLengthOfEdge(Edge{Start:edge.End, End:Point{X: circle.Cx, Y:circle.Cy}})
+		if length < circle.Radius {
+			inCircle = false
+			break
+		}
+	}
+	if inShape {
+		return true
 	}
 	return false
 }

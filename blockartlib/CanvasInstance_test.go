@@ -397,8 +397,8 @@ func TestShapesIntersect(t *testing.T) {
 	// A circle encompasses another circle - one colored, one transparent
 	circle1.FilledIn = true
 	circle2.FilledIn = false
-	if ShapesIntersect(circle1, circle2, canvasT.settings) {
-		t.Errorf("Shapes %v, %v should not be intersecting \n", circle1, circle2)
+	if !ShapesIntersect(circle1, circle2, canvasT.settings) {
+		t.Errorf("Shapes %v, %v should be intersecting \n", circle1, circle2)
 	}
 	// A circle encompasses another circle - both colored fill
 	circle1.FilledIn = true
@@ -426,6 +426,9 @@ func TestShapesIntersect(t *testing.T) {
 	// Path (open) is entirely within circle (transparent fill)
 	fmt.Println("Test case 3")
 	circle1.FilledIn = false
+	shape.FilledIn = false
+	circle1.Cx = 5
+	circle1.Cy = 5
 	circle1.Radius = 5
 	shape.Edges = append(shape.Edges, Edge{Start:Point{5,5}, End:Point{6,6}})
 	if ShapesIntersect(shape, circle1, canvasT.settings) {

@@ -33,6 +33,8 @@ import (
 	//"crypto/x509"
 	//"encoding/pem"
 	"crypto/x509"
+	"net/http"
+	"io/ioutil"
 )
 
 // Static
@@ -1699,6 +1701,7 @@ func main() {
 }
 
 // Copied from https://stackoverflow.com/a/42017521/5759077
+/*
 func getOutboundIP() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
@@ -1708,4 +1711,18 @@ func getOutboundIP() string {
 	localAddr := conn.LocalAddr().String()
 	idx := strings.LastIndex(localAddr, ":")
 	return localAddr[0:idx]
+}
+*/
+
+func getOutboundIP() string {
+	resp, err := http.Get("http://myexternalip.com/raw")
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	return string(body)
 }
