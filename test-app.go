@@ -79,15 +79,12 @@ func main() {
 
 	// wait to get 100 ink
 	var ink uint32
-	iterations := 0
 	for ink < uint32(49) {
 		ink, err = canvas.GetInk()
 		if err != nil {
 			fmt.Println(err)
 		}
 		fmt.Println(ink)
-		fmt.Println(iterations)
-		iterations++
 		time.Sleep(1000 * time.Millisecond)
 	}
 

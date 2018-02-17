@@ -1119,8 +1119,7 @@ func floodOp(opMeta OpMeta) {
 
 	replies := 0
 	replyChan := make(chan *rpc.Call, 1)
-
-
+	
 	for _, n := range neighbours {
 		var reply bool
 		_ = n.conn.Go("NotifyNewOp", opMeta, &reply, replyChan)
