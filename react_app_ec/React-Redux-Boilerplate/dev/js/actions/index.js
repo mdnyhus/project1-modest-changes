@@ -4,3 +4,10 @@ export const renderCanvas = (canvas) => {
         payload: canvas
     }
 }
+
+export const changeVersion = (version) => {
+    return {
+        type: 'RENDER_HISTORY',
+        payload: version
+    }
+}

@@ -11,13 +11,14 @@ package main
 // Expects blockartlib.go to be in the ./blockartlib/ dir, relative to
 // this art-app.go file
 import (
-	"./blockartlib"
+	"../blockartlib"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"crypto/x509"
+	"sync"
 	"encoding/hex"
 )
 
@@ -44,9 +45,11 @@ type ApiJson struct {
 }
 
 var bTLeaves []*bTNode
+var leavesLock = &sync.Mutex{}
 var genesisBlockHash string
 
 var bT = make(map[string]*bTNode)
+var btLock = &sync.Mutex{}
 
 // If error is non-nil, print it out and return it.
 func checkError(err error) error {
@@ -96,12 +99,16 @@ func buildTreeHelper(todo []PC) {
 		parent:   pc.parent,
 		children: blockHashes}
 
+	btLock.Lock()
 	bT[pc.cur] = node
+	btLock.Unlock()
 	if len(blockHashes) == 0 {
+		leavesLock.Lock()
 		if !inList(node, bTLeaves) {
 			// this is a new leaf node
 			bTLeaves = append(bTLeaves, node)
 		}
+		leavesLock.Unlock()
 	} else {
 		// add all the children nodes to the todo
 		for _, blockHash := range blockHashes {
@@ -143,10 +150,12 @@ func getShapes() []string {
 	// build up chain from genesis -> head (so can order svgs)
 	var chain []*bTNode
 	cur := head
+	btLock.Lock()
 	for cur != nil {
 		chain = append(chain, cur)
 		cur, _ = bT[cur.parent]
 	}
+	btLock.Unlock()
 
 	// reverse order of chain
 	// from https://stackoverflow.com/questions/19239449/how-do-i-reverse-an-array-in-go
@@ -219,7 +228,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		svgStrings := getShapes()
 		fmt.Println(svgStrings)
-
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		p := ApiJson{
 			CanvasXMax: settings.CanvasXMax,
 			CanvasYMax: settings.CanvasYMax,
