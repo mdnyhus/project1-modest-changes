@@ -667,34 +667,79 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 // @param canvasSettings CanvasSettings: Used to pass in the settings to the call to pointInShape
 // @return bool
 func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
-	//1. First find if there's an intersection between the edges of the two polygons.
-	for _, edgeA := range A.Edges {
-		for _, edgeB := range B.Edges {
-			if EdgesIntersect(edgeA, edgeB, true) {
+	if !A.IsCircle && !B.IsCircle {
+		//1. First find if there's an intersection between the edges of the two polygons.
+		for _, edgeA := range A.Edges {
+			for _, edgeB := range B.Edges {
+				if EdgesIntersect(edgeA, edgeB, true) {
+					return true
+				}
+			}
+		}
+
+		// The following cases test if a shape fully envelopes another shape.
+
+		// Test if B is a closed shape
+		if _, err := getAreaOfShape(&B); err == nil {
+			//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+			pointA := A.Edges[0].Start
+			if pointInShape(pointA, B, canvasSettings) {
 				return true
 			}
 		}
-	}
 
-	// The following cases test if a shape fully envelopes another shape.
-
-	// Test if B is a closed shape
-	if _, err := getAreaOfShape(&B); err == nil {
-		//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-		pointA := A.Edges[0].Start
-		if pointInShape(pointA, B, canvasSettings) {
+		if _, err := getAreaOfShape(&A); err == nil {
+			//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+			pointB := B.Edges[0].Start
+			if pointInShape(pointB, A, canvasSettings) {
+				return true
+			}
+		}
+		//4. If not, then you can conclude that the two polygons are completely outside each other.
+		return false
+	} else if A.IsCircle && B.IsCircle {
+		//https://www.geeksforgeeks.org/check-two-given-circles-touch-intersect/
+		distance := math.Sqrt(math.Pow(A.Cx - B.Cx, 2) + math.Pow(A.Cy - B.Cy, 2))
+		return floatEquals(A.Radius + B.Radius, distance) || distance < A.Radius + B.Radius
+	} else {
+		// one of A,B is a circle and one of A,B is a path-shape
+		var circle Shape
+		var path Shape
+		if A.IsCircle {
+			circle = A
+			path = B
+		} else {
+			circle = B
+			path = A
+		}
+		// https://stackoverflow.com/a/402019/5759077
+		// Either the circle's centre lies inside the rectangle
+		if pointInShape(Point{circle.Cx, circle.Cy}, path, canvasSettings) {
 			return true
 		}
-	}
+		// or one of the edges of the rectangle has a point in the circle
+		for _, edge := range path.Edges {
+			// get equation of the line
+			// y = mx + b
+			slope := (edge.End.Y - edge.Start.Y) / (edge.End.X - edge.End.Y) // m
+			intercept := edge.End.Y - slope * edge.End.X // b (b = y - mx)
+			// Line has form Ax + By + C = 0, y = mx + b, y - mx - b = 0, so A = -m, B = 1, C = -b
+			A := -1 * slope
+			var B float64 = 1
+			C := -1 * intercept
 
-	if _, err := getAreaOfShape(&A); err == nil {
-		//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-		pointB := B.Edges[0].Start
-		if pointInShape(pointB, A, canvasSettings) {
-			return true
+			// distance, with point (m,n)
+			distance := math.Abs(A * circle.Cx + B * circle.Cy + C) / math.Sqrt(math.Pow(A, 2) + math.Pow(B, 2))
+			if distance < circle.Radius {
+				// now check if any of the two vertices of the shape is closer than the radius
+				verticeEdge1 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
+				verticeEdge2 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
+				if getLengthOfEdge(verticeEdge1) <= circle.Radius || getLengthOfEdge(verticeEdge2) <= circle.Radius {
+					return true
+				}
+			}
 		}
 	}
-	//4. If not, then you can conclude that the two polygons are completely outside each other.
 	return false
 }
 
