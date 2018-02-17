@@ -1589,13 +1589,13 @@ func mine() {
 	}
 }
 
-// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`"
+// go run ink-miner.go <serverIP:Port> "`cat <path_to_pub_key>`" "`cat <path_to_priv_key>`" <blockartlib port>
 func main() {
 	// ink-miner should take one parameter, which is its outgoingAddress
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 3
+	numArgs := 4
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1604,11 +1604,15 @@ func main() {
 		} else {
 			fmt.Printf("too many arguments; expected %d, received %d\n", numArgs, len(args))
 		}
+		fmt.Println("Usage:")
+		fmt.Println("\tgo run ink-miner.go [server ip:port] [pubKey] [privKey] [blockartlib port]")
+
 		// can't proceed without correct number of arguments
 		return
 	}
 
 	outgoingAddress = args[0]
+	blockartlibPort := args[3]
 
 	pub, err := hex.DecodeString(args[1])
 	if err != nil {
@@ -1662,7 +1666,7 @@ func main() {
 	libMin := new(LibMin)
 	serverLibMin.Register(libMin)
 	// need automatic port generation
-	l, e := net.Listen("tcp", getOutboundIP()+":0")
+	l, e := net.Listen("tcp", "127.0.0.1:" + blockartlibPort)
 	if e != nil {
 		fmt.Printf("%v\n", e)
 		return
