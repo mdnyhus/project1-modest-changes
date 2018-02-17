@@ -509,8 +509,10 @@ func (l *LibMin) GetShapesIM(args *string, reply *blockartlib.GetShapesReply) (e
 
 	for _, opMeta := range blockMeta.block.ops {
 		// add op's hash to reply.ShapeHashes
-		hash := opMeta.hash.ToString()
-		reply.ShapeHashes = append(reply.ShapeHashes, hash)
+		if opMeta.op.shapeMeta != nil {
+			hash := opMeta.op.shapeMeta.Hash
+			reply.ShapeHashes = append(reply.ShapeHashes, hash)
+		}
 	}
 
 	reply.Error = nil
