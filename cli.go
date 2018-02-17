@@ -70,9 +70,13 @@ func main() {
 			}
 
 			validateNum, err := strconv.Atoi(words[1])
-			svgString := words[2]
-			fill := words[3]
-			stroke := words[4]
+			svgString := strings.Join(s[2:len(words)-2, " ")
+			fill := words[len(words) - 2]
+			stroke := words[len(words) - 1]
+			fmt.Println(validateNum)
+			fmt.Println(svgString)
+			fmt.Println(fill)
+			fmt.Println(stroke)
 
 			if err != nil {
 				fmt.Println("Bad args")
