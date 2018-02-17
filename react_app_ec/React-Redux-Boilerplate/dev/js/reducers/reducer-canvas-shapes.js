@@ -5,7 +5,7 @@ const initialState = {
     width : 0,
     height: 0, 
     shapeHistory: [],
-    currentVersionCanvas: [],
+    currentVersionCanvas: 0,
 }
 
 export default function (previousState = initialState, action) {
@@ -19,7 +19,7 @@ export default function (previousState = initialState, action) {
                     width: data.CanvasXMax,
                     height: data.CanvasYMax,
                     shapeHistory: [data.SvgStrings],
-                    currentVersionCanvas: data.SvgStrings}
+                    currentVersionCanvas: 0}
                 return newCanvasShape
             }
             var newestShapes = data.SvgStrings;
@@ -35,7 +35,7 @@ export default function (previousState = initialState, action) {
                     width: previousState.width,
                     height: previousState.height,
                     shapeHistory: updatedHistory,
-                    currentVersionCanvas: newestShapes
+                    currentVersionCanvas: updatedHistory.length - 1
                 }
                 return newCanvasShape
             } else {
@@ -49,7 +49,7 @@ export default function (previousState = initialState, action) {
                 width: previousState.width,
                 height: previousState.height,
                 shapeHistory: previousState.shapeHistory,
-                currentVersionCanvas: []
+                currentVersionCanvas: action.payload
             }
             return newCanvasShape
             break;

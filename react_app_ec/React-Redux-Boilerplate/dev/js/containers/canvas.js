@@ -21,17 +21,18 @@ class Canvas extends Component {
         if (this.props.canvas.shapeHistory.length !== 0){
             var shapeHistory = canvas.shapeHistory;
             var currentVersion = shapeHistory.length - 1;
-            htmlShapes = appendSvgPaths(canvas.currentVersionCanvas)
+            htmlShapes = appendSvgPaths(shapeHistory[this.props.canvas.currentVersionCanvas])
             historyList = shapeHistory.map((version, index)=> 
                 <li key={index}>
-                    <a onClick={()=>{this.props.changeVersion({})}}>Version: {index + 1}</a>
+                    <a onClick={()=>{this.props.changeVersion(index)}}>Version: {index}</a>
                 </li>    
             );
         }
         return (
             <div className="container">
                 <div className="row">
-                    <div className="col-md-6">
+                    <h1>{this.props.canvas.currentVersionCanvas}</h1>
+                    <div className="col-md-12">
                         <h1>Canvas</h1>
                         <button 
                         className="btn btn-primary"
@@ -39,12 +40,13 @@ class Canvas extends Component {
                         <div id="canvas" style={{width: width, height: height}} className="canvas">
                             <div dangerouslySetInnerHTML={{__html:htmlShapes}} />
                         </div>
-                       
                     </div>
-                    {/* <div className="col-md-6">
+                </div>
+                <div className="row">
+                    <div className="col-md-12">
                         <h1>History</h1>
                         {historyList}
-                    </div> */}
+                    </div>
                 </div>
             </div>
         );
