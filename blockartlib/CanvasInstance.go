@@ -220,10 +220,15 @@ func (canvas CanvasInstance) CloseCanvas() (inkRemaining uint32, err error) {
 	@return: internal shape struct ; error otherwise
 */
 func convertShape(shapeType ShapeType, shapeSvgString string, fill string, stroke string) (*Shape, error) {
+	var err error
 	var shape *Shape
 	if shapeType == PATH {
-		var err error
 		shape, err = svgToShape(shapeSvgString)
+		if err != nil {
+			return nil, err
+		}
+	} else if shapeType == CIRCLE {
+		shape, err = svgToCircleShape(shapeSvgString)
 		if err != nil {
 			return nil, err
 		}
@@ -234,9 +239,42 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 	shape.BorderColor = stroke
 	shape.Timestamp = time.Now().UnixNano()
 
-	var err error
 	shape.Ink, err = InkUsed(shape)
 	return shape, err
+}
+
+// Turn circle svg string into shape
+// @param svg string: In format "cx,cy,r"
+// - (cx, cy) = coordinate of the centre of the circle
+// - r = radius of circle
+func svgToCircleShape(svg string) (*Shape, error) {
+	if IsSvgTooLong(svg) {
+		return nil, ShapeSvgStringTooLongError(svg)
+	}
+	shape := Shape{}
+	shape.IsCircle = true
+	// Remove all whitespace in string (just to be careful)
+	svg = strings.Replace(svg, " ", "", -1)
+	svgParts := strings.Split(svg, ",")
+	if len(svgParts) != 3 {
+		return nil, InvalidShapeSvgStringError(svg + " is not a valid circle string. Use format cx,cy,r")
+	}
+	cx, err := strconv.ParseFloat(svgParts[0], 64)
+	if err != nil {
+		return nil, err
+	}
+	shape.Cx = cx
+	cy, err := strconv.ParseFloat(svgParts[1], 64)
+	if err != nil {
+		return nil, err
+	}
+	shape.Cy = cy
+	r, err := strconv.ParseFloat(svgParts[2], 64)
+	shape.Radius = r
+	if !IsShapeInCanvas(shape) {
+		return nil, InvalidShapeSvgStringError(svg)
+	}
+	return &shape, nil
 }
 
 /*
@@ -275,24 +313,41 @@ func svgToShape(svgString string) (*Shape, error) {
 func IsShapeInCanvas(shape Shape) bool {
 	canvasXMax := float64(canvasT.settings.CanvasXMax)
 	canvasYMax := float64(canvasT.settings.CanvasYMax)
-	for _, edge := range shape.Edges {
-		if edge.Start.X < 0 || edge.Start.Y < 0 || edge.End.X < 0 || edge.End.Y < 0 {
-			return false
-		}
+	if !shape.IsCircle {
+		for _, edge := range shape.Edges {
+			if edge.Start.X < 0 || edge.Start.Y < 0 || edge.End.X < 0 || edge.End.Y < 0 {
+				return false
+			}
 
-		if !floatEquals(edge.Start.X, canvasXMax) && edge.Start.X > canvasXMax {
+			if !floatEquals(edge.Start.X, canvasXMax) && edge.Start.X > canvasXMax {
+				return false
+			}
+			if !floatEquals(edge.Start.Y, canvasYMax) && edge.Start.Y > canvasYMax {
+				return false
+			}
+			if !floatEquals(edge.End.X, canvasXMax) && edge.End.X > canvasXMax {
+				return false
+			}
+			if !floatEquals(edge.End.Y, canvasYMax) && edge.End.Y > canvasYMax {
+				return false
+			}
+		}
+	} else if shape.IsCircle {
+		left := shape.Cx - shape.Radius
+		right := shape.Cx + shape.Radius
+		top := shape.Cy - shape.Radius
+		bottom := shape.Cy + shape.Radius
+		if left < 0 || top < 0 {
 			return false
 		}
-		if !floatEquals(edge.Start.Y, canvasYMax) && edge.Start.Y > canvasYMax {
+		if !floatEquals(right, canvasXMax) && right > canvasXMax {
 			return false
 		}
-		if !floatEquals(edge.End.X, canvasXMax) && edge.End.X > canvasXMax {
-			return false
-		}
-		if !floatEquals(edge.End.Y, canvasYMax) && edge.End.Y > canvasYMax {
+		if !floatEquals(bottom, canvasYMax) && bottom > canvasYMax {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -314,7 +369,7 @@ func HashShape(shape Shape) string {
 	Parses svg string to actual shape struct
 		splits the path by space and increment
 		currPoint = the current position where the pen is when drawing the svg
-		start point = the point where the pen is moved to, for z cases
+		Start point = the point where the pen is moved to, for z cases
 		@param: path string: path of the svg string
 	@return: shape that is filled with edges
 */
@@ -395,11 +450,11 @@ func getOffsetFromKeyword(keyWord string) int {
 }
 
 /*
-	Handles the M/m case, moves the current location of the pen, as well as creates a new start point
+	Handles the M/m case, moves the current location of the pen, as well as creates a new Start point
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: start: the origin point (where the pen should go back to with z)
-	@param: xVal: the x value for the svg
-	@param: yVal: the y value for the svg
+	@param: Start: the origin point (where the pen should go back to with z)
+	@param: xVal: the X value for the svg
+	@param: yVal: the Y value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -421,7 +476,7 @@ func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal strin
 		currentPoint.X += valX
 		currentPoint.Y += valY
 	}
-	// new start origin for z close
+	// new Start origin for z close
 	*startPoint = *currentPoint
 	return nil
 }
@@ -430,8 +485,8 @@ func handleMCase(currentPoint *Point, startPoint *Point, xVal string, yVal strin
 	Handles the L/l case, adds a line to the edge
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: xVal: the x value for the svg
-	@param: yVal: the y value for the svg
+	@param: xVal: the X value for the svg
+	@param: yVal: the Y value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -463,7 +518,7 @@ func handleLCase(shape *Shape, currentPoint *Point, xVal string, yVal string, ca
 	Handles the V/v case, adds a vertical line
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: yVal: the y value for the svg
+	@param: yVal: the Y value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -490,7 +545,7 @@ func handleVCase(shape *Shape, currentPoint *Point, yVal string, capital bool) e
 	Handles the H/h case, adds a horizontal line
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: xVal: the x value for the svg
+	@param: xVal: the X value for the svg
 	@param: currentIndeX: pointer to increment the val to next keyword
 	@param: capital: to signal if capital keyword or not
 
@@ -516,7 +571,7 @@ func handleHCase(shape *Shape, currentPoint *Point, xVal string, capital bool) e
 	Handles the Z/z case, closes off the shape from the origin point (not case sensitive)
 	@param: shape: the pointer to the current shape struct, adds to the list of edges
 	@param: currentPoint: pointer to the current point (where the pen lies)
-	@param: start: the origin point (where the pen should go back to with z)
+	@param: Start: the origin point (where the pen should go back to with z)
 	@param: currentIndeX: pointer to increment the val to next keyword
 */
 
@@ -545,17 +600,22 @@ func InkUsed(shape *Shape) (ink uint32, err error) {
 		} else {
 			return 0, err
 		}
-		if !IsSimpleShape(shape) {
+		if !shape.IsCircle && !IsSimpleShape(shape) {
 			return 0, errors.New("Can't have non-transparent ink if shape has self-intersecting edges")
 		}
 	}
 	if shape.BorderColor != TRANSPARENT {
-		// get border length of shape - just add all the edges up!
-		var edgeLength float64 = 0
-		for _, edge := range shape.Edges {
-			edgeLength += getLengthOfEdge(edge)
+		var borderLength float64 = 0
+		if !shape.IsCircle {
+			// get border length of shape - just add all the edges up!
+			for _, edge := range shape.Edges {
+				borderLength += getLengthOfEdge(edge)
+			}
+		} else if shape.IsCircle {
+			// circumference = 2 * pi * r
+			borderLength = 2 * math.Pi * shape.Radius
 		}
-		floatInk += edgeLength
+		floatInk += borderLength
 	}
 	ink = uint32(floatInk)
 	return ink, nil
@@ -582,23 +642,29 @@ func IsSimpleShape(shape *Shape) bool {
 // @param shape *Shape
 // @return int
 func getAreaOfShape(shape *Shape) (float64, error) {
-	// https://www.mathopenref.com/coordpolygonarea.html
-	var start Edge = shape.Edges[0]
-	var area float64 = getCrossProduct(start.Start, start.End)
-	current, err := findNextEdge(shape, start)
-	if err != nil {
-		return 0, errors.New("Couldn't find area of an open shape")
-	}
-	// keep looping until the "current" edge is the same as the start edge, you've found a cycle
-	for start != *current {
-		area += getCrossProduct(current.Start, current.End)
-		current, err = findNextEdge(shape, *current)
+	if !shape.IsCircle {
+		// https://www.mathopenref.com/coordpolygonarea.html
+		var start Edge = shape.Edges[0]
+		var area float64 = getCrossProduct(start.Start, start.End)
+		current, err := findNextEdge(shape, start)
 		if err != nil {
 			return 0, errors.New("Couldn't find area of an open shape")
 		}
-	}
+		// keep looping until the "current" edge is the same as the Start edge, you've found a cycle
+		for start != *current {
+			area += getCrossProduct(current.Start, current.End)
+			current, err = findNextEdge(shape, *current)
+			if err != nil {
+				return 0, errors.New("Couldn't find area of an open shape")
+			}
+		}
 
-	return math.Abs(area / 2), nil
+		return math.Abs(area / 2), nil
+	} else if shape.IsCircle {
+		// area = pi * r^2
+		return math.Pi * math.Pow(shape.Radius, 2), nil
+	}
+	return 0, nil
 }
 
 // @param A Shape
@@ -606,34 +672,159 @@ func getAreaOfShape(shape *Shape) (float64, error) {
 // @param canvasSettings CanvasSettings: Used to pass in the settings to the call to pointInShape
 // @return bool
 func ShapesIntersect(A Shape, B Shape, canvasSettings CanvasSettings) bool {
-	//1. First find if there's an intersection between the edges of the two polygons.
-	for _, edgeA := range A.Edges {
-		for _, edgeB := range B.Edges {
-			if EdgesIntersect(edgeA, edgeB, true) {
+	if !A.IsCircle && !B.IsCircle {
+		//1. First find if there's an intersection between the edges of the two polygons.
+		for _, edgeA := range A.Edges {
+			for _, edgeB := range B.Edges {
+				if EdgesIntersect(edgeA, edgeB, true) {
+					return true
+				}
+			}
+		}
+
+		// The following cases test if a shape fully envelopes another shape.
+		if A.FilledIn || B.FilledIn {
+			// Test if B is a closed shape
+			if _, err := getAreaOfShape(&B); err == nil {
+				//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
+				pointA := A.Edges[0].Start
+				if pointInShape(pointA, B, canvasSettings) { // this only matters if it's filled in.
+					return true
+				}
+			}
+
+			if _, err := getAreaOfShape(&A); err == nil {
+				//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
+				pointB := B.Edges[0].Start
+				if pointInShape(pointB, A, canvasSettings) {
+					return true
+				}
+			}
+		}
+		//4. If not, then you can conclude that the two polygons are completely outside each other.
+		return false
+	} else if A.IsCircle && B.IsCircle {
+/*		//https://www.geeksforgeeks.org/check-two-given-circles-touch-intersect/ - didn't work for encompassing circle
+		distance := math.Sqrt(math.Pow(A.Cx - B.Cx, 2) + math.Pow(A.Cy - B.Cy, 2))
+		if floatEquals(A.Radius + B.Radius, distance) || distance < A.Radius + B.Radius {
+			return true
+		}*/
+		distanceSquared := math.Pow(A.Cx - B.Cx, 2) + math.Pow(A.Cy - B.Cy, 2)
+		if math.Pow(A.Radius - B.Radius, 2) <= distanceSquared && distanceSquared <= math.Pow(A.Radius + B.Radius, 2) {
+			return true
+		}
+		if A.FilledIn || B.FilledIn {
+			// if no edges of circle intersect each other, then check if a circle completely overlaps another
+			// this only matters if A and B are both filled in
+			radiiEdge := Edge{Start:Point{A.Cx, A.Cy}, End:Point{B.Cx, B.Cy}}
+			length := getLengthOfEdge(radiiEdge)
+			if A.Radius > B.Radius {
+				return A.Radius > length + B.Radius
+			} else {
+				return B.Radius > length + A.Radius
+			}
+		}
+	} else {
+		// one of A,B is a circle and one of A,B is a path-shape
+		var circle Shape
+		var path Shape
+		if A.IsCircle {
+			circle = A
+			path = B
+		} else {
+			circle = B
+			path = A
+		}
+		// https://stackoverflow.com/a/402019/5759077
+		// Either the circle's centre lies inside the rectangle
+		if pointInShape(Point{circle.Cx, circle.Cy}, path, canvasSettings) {
+			// in the circle
+			if circle.FilledIn || path.FilledIn {
 				return true
+			}
+			return !checkSurroundsCircleShape(circle, path)
+		}
+
+		var distance float64
+		var A float64
+		var B float64
+		var C float64
+		// or one of the edges of the rectangle has a point in the circle
+		for _, edge := range path.Edges {
+			// get equation of the line
+			// y = mx + b
+			if edge.End.X - edge.Start.X != 0 {
+				slope := (edge.End.Y - edge.Start.Y) / (edge.End.X - edge.Start.X) // m
+				intercept := edge.End.Y - slope * edge.End.X // b (b = y - mx)
+				// Line has form Ax + By + C = 0, y = mx + b, y - mx - b = 0, so A = -m, B = 1, C = -b
+				A = -1 * slope
+				B = 1
+				C = -1 * intercept
+			} else {
+				// vertical line..
+				A = 0
+				B = 1
+				C = -1 * circle.Cy
+			}
+			// distance, with point (m,n)
+			distance = math.Abs(A * circle.Cx + B * circle.Cy + C) / math.Sqrt(math.Pow(A, 2) + math.Pow(B, 2))
+			if distance < circle.Radius {
+				// now check if any of the two vertices of the shape is closer than the radius
+				verticeEdge1 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
+				verticeEdge2 := Edge{Start:Point{circle.Cx, circle.Cy}, End:Point{edge.Start.X, edge.Start.Y}}
+				if getLengthOfEdge(verticeEdge1) <= circle.Radius || getLengthOfEdge(verticeEdge2) <= circle.Radius {
+					if circle.FilledIn || path.FilledIn {
+						return true
+					}
+					return !checkSurroundsCircleShape(circle, path)
+				}
 			}
 		}
 	}
+	return false
+}
 
-	// The following cases test if a shape fully envelopes another shape.
-
-	// Test if B is a closed shape
-	if _, err := getAreaOfShape(&B); err == nil {
-		//2. If not, then choose any one point of the first polygon and test whether it is fully inside the second.
-		pointA := A.Edges[0].Start
-		if pointInShape(pointA, B, canvasSettings) {
-			return true
+func checkSurroundsCircleShape(circle Shape, other Shape) bool {
+	// check if every vertex is inside the circle
+	inCircle := true
+	var length float64
+	for _, edge := range other.Edges {
+		length = getLengthOfEdge(Edge{Start:edge.Start, End:Point{circle.Cx, circle.Cy}})
+		if length > circle.Radius {
+			inCircle = false
+			break
+		}
+		length = getLengthOfEdge(Edge{Start:edge.End, End:Point{X: circle.Cx, Y:circle.Cy}})
+		if length > circle.Radius {
+			inCircle = false
+			break
 		}
 	}
-
-	if _, err := getAreaOfShape(&A); err == nil {
-		//3. If not, then choose any one point of the second polygon and test whether it is fully inside the first.
-		pointB := B.Edges[0].Start
-		if pointInShape(pointB, A, canvasSettings) {
-			return true
+	if inCircle {
+		return true
+	}
+	// check if the shapes is actually closed
+	_, err := getAreaOfShape(&other)
+	if err != nil {
+		return false
+	}
+	inShape := true
+	// check if radius is shorter than the length of the edge from the center of circle to each vertex
+	for _, edge := range other.Edges {
+		length = getLengthOfEdge(Edge{Start:edge.Start, End:Point{circle.Cx, circle.Cy}})
+		if length < circle.Radius {
+			inCircle = false
+			break
+		}
+		length = getLengthOfEdge(Edge{Start:edge.End, End:Point{X: circle.Cx, Y:circle.Cy}})
+		if length < circle.Radius {
+			inCircle = false
+			break
 		}
 	}
-	//4. If not, then you can conclude that the two polygons are completely outside each other.
+	if inShape {
+		return true
+	}
 	return false
 }
 
@@ -655,7 +846,7 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 	}
 
 	// 2: Check if edge A intersects with edge segment B
-	// 2a: Check if the start or end point of B is on line A - this is for parallel lines
+	// 2a: Check if the Start or End point of B is on line A - this is for parallel lines
 	// If cross product between two points is 0, it means the two points are on the same line through origin
 	// meaning it is necessary to translate the edge to the origin, and the points of B accordingly
 	var edgeA Edge = Edge{Start: Point{X: 0, Y: 0},
@@ -673,7 +864,7 @@ func EdgesIntersect(A Edge, B Edge, countTipToTipIntersect bool) bool {
 			return true
 		}
 	}
-	// 2b: Check if the cross product of the start and end points of B with line A are of different signs
+	// 2b: Check if the cross product of the Start and End points of B with line A are of different signs
 	// if they are, the lines intersect
 	// https://stackoverflow.com/questions/7069420/check-if-two-line-segments-are-colliding-only-check-if-they-are-intersecting-n
 	pointB1 = B.Start
