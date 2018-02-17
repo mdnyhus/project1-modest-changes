@@ -65,7 +65,7 @@ func (canvas CanvasInstance) AddShape(validateNum uint8, shapeType ShapeType, sh
 		return shapeHash, blockHash, inkRemaining, DisconnectedError(canvas.minerAddr)
 	}
 
-	return reply.OpHash, reply.BlockHash, reply.InkRemaining, reply.Error
+	return hash, reply.BlockHash, reply.InkRemaining, reply.Error
 }
 
 // Gets SVG string from the hashed shape
