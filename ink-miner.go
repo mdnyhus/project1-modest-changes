@@ -1712,14 +1712,3 @@ func main() {
 	mine()
 }
 
-// Copied from https://stackoverflow.com/a/42017521/5759077
-func getOutboundIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
-	localAddr := conn.LocalAddr().String()
-	idx := strings.LastIndex(localAddr, ":")
-	return localAddr[0:idx]
-}
