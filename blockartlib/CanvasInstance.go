@@ -228,7 +228,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 			return nil, err
 		}
 	} else if shapeType == CIRCLE {
-		shape, err = svgToCircleShape(shapeSvgString)
+		shape, err = SvgToCircleShape(shapeSvgString)
 		if err != nil {
 			return nil, err
 		}
@@ -247,7 +247,7 @@ func convertShape(shapeType ShapeType, shapeSvgString string, fill string, strok
 // @param svg string: In format "cx,cy,r"
 // - (cx, cy) = coordinate of the centre of the circle
 // - r = radius of circle
-func svgToCircleShape(svg string) (*Shape, error) {
+func SvgToCircleShape(svg string) (*Shape, error) {
 	if IsSvgTooLong(svg) {
 		return nil, ShapeSvgStringTooLongError(svg)
 	}

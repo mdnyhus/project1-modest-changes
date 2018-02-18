@@ -1243,8 +1243,13 @@ func validateShape(candidateShapeMeta *blockartlib.ShapeMeta) (err error) {
 		return blockartlib.OutOfBoundsError{}
 	}
 
+	var shape *blockartlib.Shape
 	// Ensure shape properties correspond to the svg path.
-	shape, err := blockartlib.ParseSvgPath(candidateShape.Svg)
+	if candidateShapeMeta.Shape.IsCircle {
+		shape, err = blockartlib.SvgToCircleShape(candidateShape.Svg)
+	} else {
+		shape, err = blockartlib.ParseSvgPath(candidateShape.Svg)
+	}
 	if err != nil {
 		return err
 	}
