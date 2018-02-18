@@ -1691,7 +1691,7 @@ func main() {
 	incomingAddress = l.Addr().String()
 	fmt.Printf("Listening for blockartlib calls on address: %s\n", incomingAddress)
 
-	ml, err := net.Listen("tcp", "0.0.0.0:" + os.Args[4])
+	ml, err := net.Listen("tcp", "0.0.0.0:" + os.Args[5])
 	// second, MinMin
 	serverMinMin := rpc.NewServer()
 	minMin := new(MinMin)
