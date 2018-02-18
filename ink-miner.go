@@ -377,7 +377,7 @@ func (l *LibMin) GetSvgStringIM(args *blockartlib.GetSvgStringArgs, reply *block
 	// NOTE: as per https://piazza.com/class/jbyh5bsk4ez3cn?cid=425,
 	// do not search externally; assume that any external blocks will get
 	// flooded to this miner soon.
-	opMeta, _ := findOpMeta(args.OpHash)
+	opMeta, _ := findOpMetaWithShape(args.OpHash)
 	if opMeta == nil {
 		// shape does not exist, return InvalidShapeHashError
 		reply.Error = blockartlib.InvalidShapeHashError(args.OpHash)
@@ -670,6 +670,28 @@ func findOpMeta(opHash string) (*OpMeta, *BlockMeta) {
 		// search through the block's ops
 		for _, opMeta := range block.ops {
 			if opMeta.hash.ToString() == opHash {
+				// opMeta was found
+				return &opMeta, blockMeta
+			}
+		}
+	}
+
+	// opMeta was not found
+	return nil, nil
+}
+
+// Searches for an opMeta in the set of local blocks with the given shapeHash.
+// @param opHash string: hash of opMeta that is being searched for
+// @return shape: found op whose hash matches opHash; nil if it does not exist
+func findOpMetaWithShape(shapeHash string) (*OpMeta, *BlockMeta) {
+	// Iterate through all locally stored blocks to search for a shape with the passed hash
+	blockTreeLock.Lock()
+	defer blockTreeLock.Unlock()
+	for _, blockMeta := range blockTree {
+		block := blockMeta.block
+		// search through the block's ops
+		for _, opMeta := range block.ops {
+			if opMeta.op.shapeMeta != nil && opMeta.op.shapeMeta.Hash == shapeHash {
 				// opMeta was found
 				return &opMeta, blockMeta
 			}
