@@ -1611,7 +1611,7 @@ func main() {
 	// skip program
 	args := os.Args[1:]
 
-	numArgs := 4
+	numArgs := 5
 
 	// check number of arguments
 	if len(args) != numArgs {
@@ -1691,11 +1691,12 @@ func main() {
 	incomingAddress = l.Addr().String()
 	fmt.Printf("Listening for blockartlib calls on address: %s\n", incomingAddress)
 
+	ml, err := net.Listen("tcp", "0.0.0.0:" + os.Args[4])
 	// second, MinMin
 	serverMinMin := rpc.NewServer()
 	minMin := new(MinMin)
 	serverMinMin.Register(minMin)
-	go serverMinMin.Accept(l)
+	go serverMinMin.Accept(ml)
 
 	// Register miner's incomingAddress
 	if registerMinerToServer() != nil {
